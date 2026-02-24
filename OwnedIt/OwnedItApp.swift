@@ -1,10 +1,3 @@
-//
-//  OwnedItApp.swift
-//  OwnedIt
-//
-//  Created by Allan Zheng on 12/4/25.
-//
-
 import SwiftUI
 import SwiftData
 
@@ -13,6 +6,7 @@ struct OwnedItApp: App {
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Item.self,
+            Room.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
