@@ -11,16 +11,16 @@ struct RoomDetailView: View {
     @State private var showingDeleteConfirmation = false
 
     private var sortedItems: [Item] {
-        room.items.sorted { $0.dateAdded > $1.dateAdded }
+        (room.items ?? []).sorted { ($0.dateAdded ?? .distantPast) > ($1.dateAdded ?? .distantPast) }
     }
 
     private var totalValue: Double {
-        room.items.compactMap { $0.displayValue }.reduce(0, +)
+        (room.items ?? []).compactMap { $0.displayValue }.reduce(0, +)
     }
 
     var body: some View {
         Group {
-            if room.items.isEmpty {
+            if (room.items ?? []).isEmpty {
                 emptyStateView
             } else {
                 List {
@@ -55,9 +55,9 @@ struct RoomDetailView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            if !room.items.isEmpty && totalValue > 0 {
+            if !(room.items ?? []).isEmpty && totalValue > 0 {
                 HStack {
-                    Text("\(room.items.count) items")
+                    Text("\((room.items ?? []).count) items")
                         .foregroundStyle(.secondary)
                     Spacer()
                     Text("Total: \(totalValue.formatted(.currency(code: Locale.current.currency?.identifier ?? "USD")))")

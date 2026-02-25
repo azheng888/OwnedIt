@@ -7,13 +7,23 @@ struct OwnedItApp: App {
         let schema = Schema([
             Item.self,
             Room.self,
+            Photo.self,
         ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+
+        // Try CloudKit-backed store first; fall back to local if not provisioned
+        let configurations: [ModelConfiguration] = [
+            ModelConfiguration(schema: schema, isStoredInMemoryOnly: false, cloudKitDatabase: .automatic)
+        ]
+        let fallback = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
         do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
+            return try ModelContainer(for: schema, configurations: configurations)
         } catch {
-            fatalError("Could not create ModelContainer: \(error)")
+            do {
+                return try ModelContainer(for: schema, configurations: [fallback])
+            } catch {
+                fatalError("Could not create ModelContainer: \(error)")
+            }
         }
     }()
 

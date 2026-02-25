@@ -5,6 +5,13 @@ struct SummaryView: View {
     @Query private var items: [Item]
     @Query(sort: \Room.name) private var rooms: [Room]
 
+    @State private var exportItem: ExportFile?
+
+    struct ExportFile: Identifiable {
+        let id = UUID()
+        let url: URL
+    }
+
     private var totalValue: Double {
         items.compactMap { $0.displayValue }.reduce(0, +)
     }
@@ -21,15 +28,16 @@ struct SummaryView: View {
 
     private var roomsWithItems: [(room: Room, count: Int, value: Double)] {
         rooms.compactMap { room in
-            guard !room.items.isEmpty else { return nil }
-            let value = room.items.compactMap { $0.displayValue }.reduce(0, +)
-            return (room, room.items.count, value)
+            let roomItems = room.items ?? []
+            guard !roomItems.isEmpty else { return nil }
+            let value = roomItems.compactMap { $0.displayValue }.reduce(0, +)
+            return (room, roomItems.count, value)
         }
         .sorted { $0.count > $1.count }
     }
 
     private var recentItems: [Item] {
-        Array(items.sorted { $0.dateAdded > $1.dateAdded }.prefix(5))
+        Array(items.sorted { ($0.dateAdded ?? .distantPast) > ($1.dateAdded ?? .distantPast) }.prefix(5))
     }
 
     private var warrantiesExpiringSoon: [Item] {
@@ -43,7 +51,7 @@ struct SummaryView: View {
                 }
                 return false
             }
-            .sorted { $0.warrantyExpiration! < $1.warrantyExpiration! }
+            .sorted { ($0.warrantyExpiration ?? .distantFuture) < ($1.warrantyExpiration ?? .distantFuture) }
     }
 
     var body: some View {
@@ -64,6 +72,39 @@ struct SummaryView: View {
             }
         }
         .navigationTitle("Summary")
+        .toolbar {
+            if !items.isEmpty {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        Button(action: exportCSV) {
+                            Label("Export CSV", systemImage: "tablecells")
+                        }
+                        Button(action: exportPDF) {
+                            Label("Export PDF", systemImage: "doc.richtext")
+                        }
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                }
+            }
+        }
+        .sheet(item: $exportItem) { file in
+            ShareSheet(url: file.url)
+        }
+    }
+
+    private func exportCSV() {
+        let data = ExportManager.csvData(from: items)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("OwnedIt-Inventory.csv")
+        try? data.write(to: url)
+        exportItem = ExportFile(url: url)
+    }
+
+    private func exportPDF() {
+        let data = ExportManager.pdfData(from: items, rooms: rooms)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("OwnedIt-Inventory.pdf")
+        try? data.write(to: url)
+        exportItem = ExportFile(url: url)
     }
 
     // MARK: - Sections
@@ -98,7 +139,7 @@ struct SummaryView: View {
                 ForEach(warrantiesExpiringSoon) { item in
                     NavigationLink(destination: ItemDetailView(item: item)) {
                         HStack {
-                            Image(systemName: item.category.icon)
+                            Image(systemName: (item.category ?? .other).icon)
                                 .foregroundStyle(.orange)
                                 .frame(width: 24)
                             Text(item.name)
@@ -164,7 +205,7 @@ struct SummaryView: View {
                 Text("By Room")
                     .font(.headline)
 
-                ForEach(roomsWithItems, id: \.room.id) { entry in
+                ForEach(roomsWithItems, id: \.room.persistentModelID) { entry in
                     HStack(spacing: 12) {
                         Image(systemName: entry.room.icon)
                             .foregroundStyle(entry.room.color)
@@ -228,6 +269,18 @@ struct SummaryView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+}
+
+// MARK: - Share Sheet
+
+struct ShareSheet: UIViewControllerRepresentable {
+    let url: URL
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: [url], applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 // MARK: - Stat Card

@@ -3,13 +3,13 @@ import SwiftData
 
 @Model
 final class Room {
-    var id: UUID
-    var name: String
-    var icon: String
-    var colorName: String
+    var id: UUID?
+    var name: String = ""
+    var icon: String = "house"
+    var colorName: String = "blue"
     @Relationship(deleteRule: .nullify, inverse: \Item.room)
-    var items: [Item]
-    var dateCreated: Date
+    var items: [Item]?
+    var dateCreated: Date?
 
     init(name: String, icon: String = "house", colorName: String = "blue") {
         self.id = UUID()

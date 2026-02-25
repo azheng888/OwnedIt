@@ -3,24 +3,25 @@ import SwiftData
 
 @Model
 final class Item {
-    var id: UUID
-    var name: String
-    var itemDescription: String
-    var category: ItemCategory
+    var id: UUID?
+    var name: String = ""
+    var itemDescription: String = ""
+    var category: ItemCategory?
     var room: Room?
-    var make: String
-    var model: String
-    var serialNumber: String
-    var condition: ItemCondition
+    var make: String = ""
+    var model: String = ""
+    var serialNumber: String = ""
+    var condition: ItemCondition?
     var purchasePrice: Double?
     var purchaseDate: Date?
-    var purchaseStore: String
+    var purchaseStore: String = ""
     var currentValue: Double?
     var warrantyExpiration: Date?
-    var warrantyProvider: String
-    var photos: [Data]
-    var notes: String
-    var dateAdded: Date
+    var warrantyProvider: String = ""
+    @Relationship(deleteRule: .cascade, inverse: \Photo.item)
+    var photos: [Photo]?
+    var notes: String = ""
+    var dateAdded: Date?
 
     init(
         name: String = "",
@@ -37,7 +38,6 @@ final class Item {
         currentValue: Double? = nil,
         warrantyExpiration: Date? = nil,
         warrantyProvider: String = "",
-        photos: [Data] = [],
         notes: String = ""
     ) {
         self.id = UUID()
@@ -55,12 +55,11 @@ final class Item {
         self.currentValue = currentValue
         self.warrantyExpiration = warrantyExpiration
         self.warrantyProvider = warrantyProvider
-        self.photos = photos
+        self.photos = []
         self.notes = notes
         self.dateAdded = Date()
     }
 
-    // Returns current value if set, otherwise falls back to purchase price
     var displayValue: Double? {
         currentValue ?? purchasePrice
     }

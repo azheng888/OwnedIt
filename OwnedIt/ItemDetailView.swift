@@ -9,15 +9,18 @@ struct ItemDetailView: View {
     @State private var showingDeleteConfirmation = false
     @State private var selectedPhotoIndex = 0
 
+    private var photos: [Photo] { item.photos ?? [] }
+    private var category: ItemCategory { item.category ?? .other }
+    private var condition: ItemCondition { item.condition ?? .good }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
 
-                // Photo carousel
-                if !item.photos.isEmpty {
+                if !photos.isEmpty {
                     TabView(selection: $selectedPhotoIndex) {
-                        ForEach(Array(item.photos.enumerated()), id: \.offset) { index, photoData in
-                            if let uiImage = UIImage(data: photoData) {
+                        ForEach(Array(photos.enumerated()), id: \.offset) { index, photo in
+                            if let data = photo.imageData, let uiImage = UIImage(data: data) {
                                 Image(uiImage: uiImage)
                                     .resizable()
                                     .scaledToFill()
@@ -34,30 +37,25 @@ struct ItemDetailView: View {
 
                 VStack(alignment: .leading, spacing: 20) {
 
-                    // Badges + description
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 8) {
-                            Label(item.category.rawValue, systemImage: item.category.icon)
+                            Label(category.rawValue, systemImage: category.icon)
                                 .badgeStyle(color: .accentColor)
-
-                            Label(item.condition.rawValue, systemImage: "circle.fill")
-                                .badgeStyle(color: item.condition.color)
+                            Label(condition.rawValue, systemImage: "circle.fill")
+                                .badgeStyle(color: condition.color)
                         }
-
                         if !item.itemDescription.isEmpty {
                             Text(item.itemDescription)
                                 .foregroundStyle(.secondary)
                         }
                     }
 
-                    // Location
                     if let room = item.room {
                         DetailSection(title: "Location") {
                             DetailRow(label: "Room", value: room.name, icon: room.icon)
                         }
                     }
 
-                    // Identification
                     if !item.make.isEmpty || !item.model.isEmpty || !item.serialNumber.isEmpty {
                         DetailSection(title: "Identification") {
                             if !item.make.isEmpty {
@@ -72,7 +70,6 @@ struct ItemDetailView: View {
                         }
                     }
 
-                    // Purchase
                     if item.purchasePrice != nil || item.purchaseDate != nil || !item.purchaseStore.isEmpty {
                         DetailSection(title: "Purchase") {
                             if let price = item.purchasePrice {
@@ -91,7 +88,6 @@ struct ItemDetailView: View {
                         }
                     }
 
-                    // Current value (if different from purchase price)
                     if let value = item.currentValue {
                         DetailSection(title: "Current Value") {
                             DetailRow(
@@ -102,7 +98,6 @@ struct ItemDetailView: View {
                         }
                     }
 
-                    // Warranty
                     if item.warrantyExpiration != nil || !item.warrantyProvider.isEmpty {
                         DetailSection(title: "Warranty") {
                             if let expiration = item.warrantyExpiration {
@@ -120,7 +115,6 @@ struct ItemDetailView: View {
                         }
                     }
 
-                    // Notes
                     if !item.notes.isEmpty {
                         DetailSection(title: "Notes") {
                             Text(item.notes)
@@ -129,11 +123,13 @@ struct ItemDetailView: View {
                         }
                     }
 
-                    Text("Added \(item.dateAdded.formatted(date: .long, time: .omitted))")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.bottom, 8)
+                    if let added = item.dateAdded {
+                        Text("Added \(added.formatted(date: .long, time: .omitted))")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.bottom, 8)
+                    }
                 }
                 .padding()
             }
@@ -179,15 +175,12 @@ struct DetailSection<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title)
-                .font(.headline)
-            VStack(alignment: .leading, spacing: 10) {
-                content
-            }
-            .padding()
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(.secondarySystemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            Text(title).font(.headline)
+            VStack(alignment: .leading, spacing: 10) { content }
+                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(.secondarySystemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
         }
     }
 }
@@ -200,25 +193,16 @@ struct DetailRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: icon)
-                .foregroundStyle(.secondary)
-                .frame(width: 20)
-            Text(label)
-                .foregroundStyle(.secondary)
-                .frame(width: 80, alignment: .leading)
-            Text(value)
-                .foregroundStyle(valueColor)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: icon).foregroundStyle(.secondary).frame(width: 20)
+            Text(label).foregroundStyle(.secondary).frame(width: 80, alignment: .leading)
+            Text(value).foregroundStyle(valueColor).frame(maxWidth: .infinity, alignment: .leading)
         }
         .font(.subheadline)
     }
 }
 
-// MARK: - Badge modifier
-
 private struct BadgeStyle: ViewModifier {
     let color: Color
-
     func body(content: Content) -> some View {
         content
             .font(.caption)
@@ -231,7 +215,5 @@ private struct BadgeStyle: ViewModifier {
 }
 
 private extension View {
-    func badgeStyle(color: Color) -> some View {
-        modifier(BadgeStyle(color: color))
-    }
+    func badgeStyle(color: Color) -> some View { modifier(BadgeStyle(color: color)) }
 }

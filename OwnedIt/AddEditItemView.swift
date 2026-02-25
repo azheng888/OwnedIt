@@ -42,8 +42,13 @@ struct AddEditItemView: View {
 
     // Notes & Photos
     @State private var notes = ""
-    @State private var photos: [Data] = []
+    @State private var photoData: [Data] = []         // working copy of image bytes
     @State private var selectedPhotos: [PhotosPickerItem] = []
+
+    // Barcode scanner
+    @State private var showingBarcodeScanner = false
+    @State private var isLookingUpBarcode = false
+    @State private var barcodeLookupError: String?
 
     var isEditing: Bool { item != nil }
 
@@ -83,11 +88,36 @@ struct AddEditItemView: View {
                     if let data = try? await pickerItem.loadTransferable(type: Data.self),
                        let image = UIImage(data: data),
                        let compressed = image.jpegData(compressionQuality: 0.75) {
-                        photos.append(compressed)
+                        photoData.append(compressed)
                     }
                 }
                 selectedPhotos = []
             }
+        }
+        .sheet(isPresented: $showingBarcodeScanner) {
+            BarcodeScannerSheet { barcode in
+                showingBarcodeScanner = false
+                lookUpBarcode(barcode)
+            }
+        }
+        .overlay {
+            if isLookingUpBarcode {
+                ZStack {
+                    Color.black.opacity(0.3).ignoresSafeArea()
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("Looking up product…")
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(24)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                }
+            }
+        }
+        .alert("Barcode Lookup Failed", isPresented: .constant(barcodeLookupError != nil)) {
+            Button("OK") { barcodeLookupError = nil }
+        } message: {
+            Text(barcodeLookupError ?? "")
         }
     }
 
@@ -111,8 +141,8 @@ struct AddEditItemView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 10))
                     }
 
-                    ForEach(Array(photos.enumerated()), id: \.offset) { index, photoData in
-                        if let uiImage = UIImage(data: photoData) {
+                    ForEach(Array(photoData.enumerated()), id: \.offset) { index, data in
+                        if let uiImage = UIImage(data: data) {
                             ZStack(alignment: .topTrailing) {
                                 Image(uiImage: uiImage)
                                     .resizable()
@@ -121,7 +151,7 @@ struct AddEditItemView: View {
                                     .clipShape(RoundedRectangle(cornerRadius: 10))
 
                                 Button {
-                                    photos.remove(at: index)
+                                    photoData.remove(at: index)
                                 } label: {
                                     Image(systemName: "xmark.circle.fill")
                                         .symbolRenderingMode(.palette)
@@ -140,7 +170,18 @@ struct AddEditItemView: View {
 
     private var basicInfoSection: some View {
         Section("Basic Info") {
-            TextField("Name", text: $name)
+            HStack {
+                TextField("Name", text: $name)
+                if !isEditing {
+                    Button {
+                        showingBarcodeScanner = true
+                    } label: {
+                        Image(systemName: "barcode.viewfinder")
+                            .foregroundStyle(Color.accentColor)
+                    }
+                }
+            }
+
             TextField("Description", text: $itemDescription, axis: .vertical)
                 .lineLimit(3, reservesSpace: false)
 
@@ -182,8 +223,7 @@ struct AddEditItemView: View {
             Toggle("Purchase Price", isOn: $hasPurchasePrice.animation())
             if hasPurchasePrice {
                 HStack {
-                    Text(Locale.current.currencySymbol ?? "$")
-                        .foregroundStyle(.secondary)
+                    Text(Locale.current.currencySymbol ?? "$").foregroundStyle(.secondary)
                     TextField("0.00", value: $purchasePrice, format: .number)
                         .keyboardType(.decimalPad)
                 }
@@ -204,8 +244,7 @@ struct AddEditItemView: View {
             Toggle("Track Current Value", isOn: $hasCurrentValue.animation())
             if hasCurrentValue {
                 HStack {
-                    Text(Locale.current.currencySymbol ?? "$")
-                        .foregroundStyle(.secondary)
+                    Text(Locale.current.currencySymbol ?? "$").foregroundStyle(.secondary)
                     TextField("0.00", value: $currentValue, format: .number)
                         .keyboardType(.decimalPad)
                 }
@@ -236,13 +275,55 @@ struct AddEditItemView: View {
         }
     }
 
-    // MARK: - Helpers
+    // MARK: - Barcode Lookup
+
+    private func lookUpBarcode(_ barcode: String) {
+        serialNumber = barcode
+        isLookingUpBarcode = true
+
+        guard let url = URL(string: "https://api.upcitemdb.com/prod/trial/lookup?upc=\(barcode)") else {
+            isLookingUpBarcode = false
+            return
+        }
+
+        Task {
+            defer { isLookingUpBarcode = false }
+            do {
+                let (data, _) = try await URLSession.shared.data(from: url)
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let items = json["items"] as? [[String: Any]],
+                   let first = items.first {
+                    await MainActor.run {
+                        if name.isEmpty, let title = first["title"] as? String {
+                            name = title
+                        }
+                        if make.isEmpty, let brand = first["brand"] as? String {
+                            make = brand
+                        }
+                        if model.isEmpty, let mdl = first["model"] as? String {
+                            model = mdl
+                        }
+                    }
+                } else {
+                    await MainActor.run {
+                        barcodeLookupError = "No product found for barcode \(barcode). You can still enter details manually."
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    barcodeLookupError = "Could not reach the product database. Check your connection."
+                }
+            }
+        }
+    }
+
+    // MARK: - Load / Save
 
     private func loadFrom(_ item: Item) {
         name = item.name
         itemDescription = item.itemDescription
-        category = item.category
-        condition = item.condition
+        category = item.category ?? .other
+        condition = item.condition ?? .good
         selectedRoom = item.room
         make = item.make
         model = item.model
@@ -250,24 +331,12 @@ struct AddEditItemView: View {
         purchaseStore = item.purchaseStore
         warrantyProvider = item.warrantyProvider
         notes = item.notes
-        photos = item.photos
+        photoData = (item.photos ?? []).compactMap { $0.imageData }
 
-        if let price = item.purchasePrice {
-            hasPurchasePrice = true
-            purchasePrice = price
-        }
-        if let date = item.purchaseDate {
-            hasPurchaseDate = true
-            purchaseDate = date
-        }
-        if let value = item.currentValue {
-            hasCurrentValue = true
-            currentValue = value
-        }
-        if let expiry = item.warrantyExpiration {
-            hasWarranty = true
-            warrantyExpiration = expiry
-        }
+        if let price = item.purchasePrice { hasPurchasePrice = true; purchasePrice = price }
+        if let date = item.purchaseDate   { hasPurchaseDate = true;  purchaseDate = date }
+        if let value = item.currentValue  { hasCurrentValue = true;  currentValue = value }
+        if let expiry = item.warrantyExpiration { hasWarranty = true; warrantyExpiration = expiry }
     }
 
     private func save() {
@@ -294,7 +363,14 @@ struct AddEditItemView: View {
         target.warrantyExpiration = hasWarranty ? warrantyExpiration : nil
         target.warrantyProvider = warrantyProvider
         target.notes = notes
-        target.photos = photos
+
+        // Replace photos
+        for existing in target.photos ?? [] { modelContext.delete(existing) }
+        for data in photoData {
+            let photo = Photo(imageData: data)
+            photo.item = target
+            modelContext.insert(photo)
+        }
 
         dismiss()
     }

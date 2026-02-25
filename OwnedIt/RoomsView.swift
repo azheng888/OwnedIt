@@ -68,8 +68,10 @@ struct RoomsView: View {
 struct RoomCardView: View {
     let room: Room
 
+    private var roomItems: [Item] { room.items ?? [] }
+
     private var totalValue: Double {
-        room.items.compactMap { $0.displayValue }.reduce(0, +)
+        roomItems.compactMap { $0.displayValue }.reduce(0, +)
     }
 
     var body: some View {
@@ -84,7 +86,7 @@ struct RoomCardView: View {
                         .foregroundStyle(room.color)
                 }
                 Spacer()
-                Text("\(room.items.count)")
+                Text("\(roomItems.count)")
                     .font(.title2)
                     .fontWeight(.bold)
                     .foregroundStyle(room.color)
@@ -99,7 +101,7 @@ struct RoomCardView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                Text(room.items.count == 1 ? "1 item" : "\(room.items.count) items")
+                Text(roomItems.count == 1 ? "1 item" : "\(roomItems.count) items")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

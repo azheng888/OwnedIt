@@ -3,7 +3,7 @@ import SwiftData
 
 struct ItemsView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \Item.dateAdded, order: .reverse) private var items: [Item]
+    @Query private var items: [Item]
     @Query(sort: \Room.name) private var rooms: [Room]
 
     @State private var searchText = ""
@@ -36,12 +36,12 @@ struct ItemsView: View {
         }
 
         if let room = selectedRoom {
-            result = result.filter { $0.room?.id == room.id }
+            result = result.filter { $0.room?.persistentModelID == room.persistentModelID }
         }
 
         switch sortOrder {
         case .dateAdded:
-            break
+            result.sort { ($0.dateAdded ?? .distantPast) > ($1.dateAdded ?? .distantPast) }
         case .name:
             result.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         case .value:
@@ -113,19 +113,13 @@ struct ItemsView: View {
                 Button {
                     selectedCategory = nil
                 } label: {
-                    if selectedCategory == nil {
-                        Label("All Categories", systemImage: "checkmark")
-                    } else {
-                        Text("All Categories")
-                    }
+                    if selectedCategory == nil { Label("All Categories", systemImage: "checkmark") }
+                    else { Text("All Categories") }
                 }
                 ForEach(ItemCategory.allCases, id: \.self) { category in
                     Button(action: { selectedCategory = category }) {
-                        if selectedCategory == category {
-                            Label(category.rawValue, systemImage: "checkmark")
-                        } else {
-                            Text(category.rawValue)
-                        }
+                        if selectedCategory == category { Label(category.rawValue, systemImage: "checkmark") }
+                        else { Text(category.rawValue) }
                     }
                 }
             }
@@ -135,15 +129,12 @@ struct ItemsView: View {
                     Button {
                         selectedRoom = nil
                     } label: {
-                        if selectedRoom == nil {
-                            Label("All Rooms", systemImage: "checkmark")
-                        } else {
-                            Text("All Rooms")
-                        }
+                        if selectedRoom == nil { Label("All Rooms", systemImage: "checkmark") }
+                        else { Text("All Rooms") }
                     }
                     ForEach(rooms) { room in
                         Button(action: { selectedRoom = room }) {
-                            if selectedRoom?.id == room.id {
+                            if selectedRoom?.persistentModelID == room.persistentModelID {
                                 Label(room.name, systemImage: "checkmark")
                             } else {
                                 Text(room.name)
@@ -169,10 +160,8 @@ struct ItemsView: View {
                 .fontWeight(.semibold)
             Text("Tap + to add your first item")
                 .foregroundStyle(.secondary)
-            Button("Add Item") {
-                showingAddItem = true
-            }
-            .buttonStyle(.borderedProminent)
+            Button("Add Item") { showingAddItem = true }
+                .buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

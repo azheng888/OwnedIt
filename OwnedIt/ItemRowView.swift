@@ -3,13 +3,16 @@ import SwiftUI
 struct ItemRowView: View {
     let item: Item
 
+    private var category: ItemCategory { item.category ?? .other }
+    private var condition: ItemCondition { item.condition ?? .good }
+
     var body: some View {
         HStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10)
                     .fill(Color.accentColor.opacity(0.15))
                     .frame(width: 44, height: 44)
-                Image(systemName: item.category.icon)
+                Image(systemName: category.icon)
                     .font(.system(size: 20))
                     .foregroundStyle(Color.accentColor)
             }
@@ -21,7 +24,7 @@ struct ItemRowView: View {
                     .lineLimit(1)
 
                 HStack(spacing: 4) {
-                    Text(item.category.rawValue)
+                    Text(category.rawValue)
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
@@ -45,12 +48,12 @@ struct ItemRowView: View {
                         .fontWeight(.semibold)
                 }
 
-                Text(item.condition.rawValue)
+                Text(condition.rawValue)
                     .font(.caption2)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(item.condition.color.opacity(0.15))
-                    .foregroundStyle(item.condition.color)
+                    .background(condition.color.opacity(0.15))
+                    .foregroundStyle(condition.color)
                     .clipShape(Capsule())
             }
         }
