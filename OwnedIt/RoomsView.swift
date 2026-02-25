@@ -24,6 +24,12 @@ struct RoomsView: View {
                         }
                     }
                     .padding()
+
+                    if !remainingSuggestions.isEmpty {
+                        suggestionsSection
+                            .padding(.horizontal)
+                            .padding(.bottom)
+                    }
                 }
             }
         }
@@ -38,6 +44,58 @@ struct RoomsView: View {
         .sheet(isPresented: $showingAddRoom) {
             NavigationStack {
                 AddEditRoomView()
+            }
+        }
+    }
+
+    private struct RoomSuggestion {
+        let name: String
+        let icon: String
+        let colorName: String
+    }
+
+    private let suggestedRooms: [RoomSuggestion] = [
+        RoomSuggestion(name: "Living Room", icon: "sofa",         colorName: "blue"),
+        RoomSuggestion(name: "Kitchen",     icon: "fork.knife",   colorName: "orange"),
+        RoomSuggestion(name: "Bedroom",     icon: "bed.double",   colorName: "purple"),
+        RoomSuggestion(name: "Bathroom",    icon: "shower",       colorName: "teal"),
+        RoomSuggestion(name: "Garage",      icon: "car.fill",     colorName: "green"),
+        RoomSuggestion(name: "Office",      icon: "building.2",   colorName: "blue"),
+        RoomSuggestion(name: "Laundry",     icon: "washer",       colorName: "teal"),
+        RoomSuggestion(name: "Storage",     icon: "shippingbox",  colorName: "yellow"),
+    ]
+
+    private var remainingSuggestions: [RoomSuggestion] {
+        let existingNames = Set(rooms.map { $0.name })
+        return suggestedRooms.filter { !existingNames.contains($0.name) }
+    }
+
+    private func addSuggestion(_ suggestion: RoomSuggestion) {
+        let room = Room(name: suggestion.name, icon: suggestion.icon, colorName: suggestion.colorName)
+        modelContext.insert(room)
+    }
+
+    private var suggestionsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Common rooms")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(remainingSuggestions, id: \.name) { suggestion in
+                        Button {
+                            addSuggestion(suggestion)
+                        } label: {
+                            Label(suggestion.name, systemImage: suggestion.icon)
+                                .font(.subheadline)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(Color(.secondarySystemBackground))
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
             }
         }
     }
@@ -58,6 +116,9 @@ struct RoomsView: View {
                 showingAddRoom = true
             }
             .buttonStyle(.borderedProminent)
+
+            suggestionsSection
+                .padding(.top, 8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -67,8 +128,15 @@ struct RoomsView: View {
 
 struct RoomCardView: View {
     let room: Room
+    @Query private var roomItems: [Item]
 
-    private var roomItems: [Item] { room.items ?? [] }
+    init(room: Room) {
+        self.room = room
+        let roomID = room.persistentModelID
+        _roomItems = Query(filter: #Predicate<Item> { item in
+            item.room?.persistentModelID == roomID
+        })
+    }
 
     private var totalValue: Double {
         roomItems.compactMap { $0.displayValue }.reduce(0, +)

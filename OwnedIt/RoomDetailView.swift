@@ -9,6 +9,8 @@ struct RoomDetailView: View {
     @State private var showingEditRoom = false
     @State private var showingAddItem = false
     @State private var showingDeleteConfirmation = false
+    @State private var undoMemento: DeletedItemMemento?
+    @State private var undoTask: Task<Void, Never>?
 
     private var sortedItems: [Item] {
         (room.items ?? []).sorted { ($0.dateAdded ?? .distantPast) > ($1.dateAdded ?? .distantPast) }
@@ -79,6 +81,27 @@ struct RoomDetailView: View {
                 AddEditItemView(preselectedRoom: room)
             }
         }
+        .overlay(alignment: .bottom) {
+            if let memento = undoMemento {
+                HStack {
+                    Text("Deleted \"\(memento.name)\"")
+                    Spacer()
+                    Button("Undo") {
+                        undoTask?.cancel()
+                        restoreItem(from: memento, in: modelContext)
+                        undoMemento = nil
+                    }
+                    .fontWeight(.semibold)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.spring, value: undoMemento != nil)
         .confirmationDialog("Delete \"\(room.name)\"?", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
             Button("Delete Room", role: .destructive) {
                 modelContext.delete(room)
@@ -107,8 +130,17 @@ struct RoomDetailView: View {
     }
 
     private func deleteItems(offsets: IndexSet) {
-        for index in offsets {
-            modelContext.delete(sortedItems[index])
+        undoTask?.cancel()
+        let toDelete = offsets.map { sortedItems[$0] }
+        undoMemento = toDelete.count == 1 ? DeletedItemMemento(from: toDelete[0]) : nil
+        for item in toDelete { modelContext.delete(item) }
+        if undoMemento != nil {
+            undoTask = Task {
+                try? await Task.sleep(for: .seconds(4))
+                if !Task.isCancelled {
+                    await MainActor.run { undoMemento = nil }
+                }
+            }
         }
     }
 }

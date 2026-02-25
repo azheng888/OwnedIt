@@ -54,6 +54,17 @@ struct SummaryView: View {
             .sorted { ($0.warrantyExpiration ?? .distantFuture) < ($1.warrantyExpiration ?? .distantFuture) }
     }
 
+    private var expiredWarranties: [Item] {
+        items
+            .filter {
+                if let exp = $0.warrantyExpiration {
+                    return exp < Date()
+                }
+                return false
+            }
+            .sorted { ($0.warrantyExpiration ?? .distantPast) < ($1.warrantyExpiration ?? .distantPast) }
+    }
+
     var body: some View {
         Group {
             if items.isEmpty {
@@ -130,37 +141,74 @@ struct SummaryView: View {
 
     @ViewBuilder
     private var warrantyAlertsSection: some View {
-        if !warrantiesExpiringSoon.isEmpty {
+        if !expiredWarranties.isEmpty || !warrantiesExpiringSoon.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                Label("Warranties Expiring Soon", systemImage: "exclamationmark.shield.fill")
+                Label("Warranty Alerts", systemImage: "exclamationmark.shield.fill")
                     .font(.headline)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(expiredWarranties.isEmpty ? Color.orange : Color.red)
 
-                ForEach(warrantiesExpiringSoon) { item in
-                    NavigationLink(destination: ItemDetailView(item: item)) {
-                        HStack {
-                            Image(systemName: (item.category ?? .other).icon)
-                                .foregroundStyle(.orange)
-                                .frame(width: 24)
-                            Text(item.name)
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            if let exp = item.warrantyExpiration {
-                                Text(exp, format: .dateTime.month(.abbreviated).day().year())
-                                    .foregroundStyle(.secondary)
-                                    .font(.caption)
+                if !expiredWarranties.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Expired")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.red)
+
+                        ForEach(expiredWarranties) { item in
+                            NavigationLink(destination: ItemDetailView(item: item)) {
+                                HStack {
+                                    Image(systemName: (item.category ?? .other).icon)
+                                        .foregroundStyle(.red)
+                                        .frame(width: 24)
+                                    Text(item.name)
+                                        .foregroundStyle(.primary)
+                                    Spacer()
+                                    if let exp = item.warrantyExpiration {
+                                        Text(exp, format: .dateTime.month(.abbreviated).day().year())
+                                            .foregroundStyle(.red)
+                                            .font(.caption)
+                                    }
+                                }
                             }
+                            .buttonStyle(.plain)
                         }
                     }
-                    .buttonStyle(.plain)
+                }
+
+                if !warrantiesExpiringSoon.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Expiring Soon")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.orange)
+
+                        ForEach(warrantiesExpiringSoon) { item in
+                            NavigationLink(destination: ItemDetailView(item: item)) {
+                                HStack {
+                                    Image(systemName: (item.category ?? .other).icon)
+                                        .foregroundStyle(.orange)
+                                        .frame(width: 24)
+                                    Text(item.name)
+                                        .foregroundStyle(.primary)
+                                    Spacer()
+                                    if let exp = item.warrantyExpiration {
+                                        Text(exp, format: .dateTime.month(.abbreviated).day().year())
+                                            .foregroundStyle(.secondary)
+                                            .font(.caption)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                 }
             }
             .padding()
-            .background(Color.orange.opacity(0.08))
+            .background((expiredWarranties.isEmpty ? Color.orange : Color.red).opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color.orange.opacity(0.25), lineWidth: 1)
+                    .stroke((expiredWarranties.isEmpty ? Color.orange : Color.red).opacity(0.25), lineWidth: 1)
             )
         }
     }
@@ -238,7 +286,7 @@ struct SummaryView: View {
                 Text("Recently Added")
                     .font(.headline)
 
-                ForEach(Array(recentItems.enumerated()), id: \.element.id) { index, item in
+                ForEach(Array(recentItems.enumerated()), id: \.element.persistentModelID) { index, item in
                     NavigationLink(destination: ItemDetailView(item: item)) {
                         ItemRowView(item: item)
                     }

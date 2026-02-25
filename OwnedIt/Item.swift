@@ -64,3 +64,69 @@ final class Item {
         currentValue ?? purchasePrice
     }
 }
+
+// MARK: - Undo Support
+
+struct DeletedItemMemento {
+    let name: String
+    let itemDescription: String
+    let category: ItemCategory?
+    let room: Room?
+    let make: String
+    let model: String
+    let serialNumber: String
+    let condition: ItemCondition?
+    let purchasePrice: Double?
+    let purchaseDate: Date?
+    let purchaseStore: String
+    let currentValue: Double?
+    let warrantyExpiration: Date?
+    let warrantyProvider: String
+    let notes: String
+    let photoData: [Data]
+
+    init(from item: Item) {
+        self.name = item.name
+        self.itemDescription = item.itemDescription
+        self.category = item.category
+        self.room = item.room
+        self.make = item.make
+        self.model = item.model
+        self.serialNumber = item.serialNumber
+        self.condition = item.condition
+        self.purchasePrice = item.purchasePrice
+        self.purchaseDate = item.purchaseDate
+        self.purchaseStore = item.purchaseStore
+        self.currentValue = item.currentValue
+        self.warrantyExpiration = item.warrantyExpiration
+        self.warrantyProvider = item.warrantyProvider
+        self.notes = item.notes
+        self.photoData = (item.photos ?? []).compactMap { $0.imageData }
+    }
+}
+
+func restoreItem(from memento: DeletedItemMemento, in context: ModelContext) {
+    let item = Item(
+        name: memento.name,
+        itemDescription: memento.itemDescription,
+        category: memento.category ?? .other,
+        room: memento.room,
+        make: memento.make,
+        model: memento.model,
+        serialNumber: memento.serialNumber,
+        condition: memento.condition ?? .good,
+        purchasePrice: memento.purchasePrice,
+        purchaseDate: memento.purchaseDate,
+        purchaseStore: memento.purchaseStore,
+        currentValue: memento.currentValue,
+        warrantyExpiration: memento.warrantyExpiration,
+        warrantyProvider: memento.warrantyProvider,
+        notes: memento.notes
+    )
+    context.insert(item)
+    for data in memento.photoData {
+        let photo = Photo(imageData: data)
+        photo.item = item
+        context.insert(photo)
+    }
+}

@@ -12,10 +12,21 @@ struct ItemsView: View {
     @State private var sortOrder: SortOrder = .dateAdded
     @State private var showingAddItem = false
 
+    // Bulk select
+    @State private var isSelectMode = false
+    @State private var selectedIDs: Set<PersistentIdentifier> = []
+    @State private var showingMoveSheet = false
+
+    // Undo toast
+    @State private var undoMemento: DeletedItemMemento?
+    @State private var undoTask: Task<Void, Never>?
+
     enum SortOrder: String, CaseIterable {
         case dateAdded = "Date Added"
         case name = "Name"
         case value = "Value"
+        case condition = "Condition"
+        case room = "Room"
     }
 
     var filteredItems: [Item] {
@@ -46,6 +57,17 @@ struct ItemsView: View {
             result.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         case .value:
             result.sort { ($0.displayValue ?? 0) > ($1.displayValue ?? 0) }
+        case .condition:
+            result.sort { ($0.condition?.rawValue ?? "") < ($1.condition?.rawValue ?? "") }
+        case .room:
+            result.sort {
+                let lhs = $0.room?.name ?? ""
+                let rhs = $1.room?.name ?? ""
+                if lhs.isEmpty && rhs.isEmpty { return false }
+                if lhs.isEmpty { return false }
+                if rhs.isEmpty { return true }
+                return lhs.localizedCaseInsensitiveCompare(rhs) == .orderedAscending
+            }
         }
 
         return result
@@ -62,16 +84,64 @@ struct ItemsView: View {
             } else {
                 List {
                     ForEach(filteredItems) { item in
-                        NavigationLink(destination: ItemDetailView(item: item)) {
-                            ItemRowView(item: item)
+                        if isSelectMode {
+                            Button {
+                                if selectedIDs.contains(item.persistentModelID) {
+                                    selectedIDs.remove(item.persistentModelID)
+                                } else {
+                                    selectedIDs.insert(item.persistentModelID)
+                                }
+                            } label: {
+                                HStack {
+                                    Image(systemName: selectedIDs.contains(item.persistentModelID)
+                                          ? "checkmark.circle.fill"
+                                          : "circle")
+                                        .foregroundStyle(selectedIDs.contains(item.persistentModelID)
+                                                         ? Color.accentColor : Color.secondary)
+                                        .font(.title3)
+                                    ItemRowView(item: item)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            NavigationLink(destination: ItemDetailView(item: item)) {
+                                ItemRowView(item: item)
+                            }
                         }
                     }
-                    .onDelete(perform: deleteItems)
+                    .onDelete(perform: isSelectMode ? nil : deleteItems)
                 }
                 .listStyle(.insetGrouped)
                 .overlay {
                     if filteredItems.isEmpty {
                         ContentUnavailableView.search(text: searchText)
+                    }
+                }
+                .safeAreaInset(edge: .bottom) {
+                    if isSelectMode && !selectedIDs.isEmpty {
+                        HStack(spacing: 16) {
+                            Button(role: .destructive) {
+                                bulkDelete()
+                            } label: {
+                                Text("Delete \(selectedIDs.count) Item\(selectedIDs.count == 1 ? "" : "s")")
+                                    .fontWeight(.semibold)
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.red)
+
+                            Button {
+                                showingMoveSheet = true
+                            } label: {
+                                Text("Move to Room…")
+                                    .fontWeight(.semibold)
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .background(.bar)
                     }
                 }
             }
@@ -80,18 +150,67 @@ struct ItemsView: View {
         .searchable(text: $searchText, prompt: "Search items…")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button(action: { showingAddItem = true }) {
-                    Image(systemName: "plus")
+                if !isSelectMode {
+                    Button(action: { showingAddItem = true }) {
+                        Image(systemName: "plus")
+                    }
                 }
             }
             ToolbarItem(placement: .navigationBarLeading) {
-                filterMenu
+                if isSelectMode {
+                    Button("Cancel") {
+                        isSelectMode = false
+                        selectedIDs.removeAll()
+                    }
+                } else {
+                    filterMenu
+                }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if !items.isEmpty && !isSelectMode {
+                    Button("Select") {
+                        isSelectMode = true
+                    }
+                }
             }
         }
         .sheet(isPresented: $showingAddItem) {
             NavigationStack {
                 AddEditItemView()
             }
+        }
+        .sheet(isPresented: $showingMoveSheet) {
+            moveToRoomSheet
+        }
+        .overlay(alignment: .bottom) {
+            if let memento = undoMemento {
+                HStack {
+                    Text("Deleted \"\(memento.name)\"")
+                    Spacer()
+                    Button("Undo") {
+                        undoTask?.cancel()
+                        restoreItem(from: memento, in: modelContext)
+                        undoMemento = nil
+                    }
+                    .fontWeight(.semibold)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .padding(.horizontal, 16)
+                .padding(.bottom, isSelectMode && !selectedIDs.isEmpty ? 80 : 16)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.spring, value: undoMemento != nil)
+        .onChange(of: searchText) { _, _ in
+            if isSelectMode { isSelectMode = false; selectedIDs.removeAll() }
+        }
+        .onChange(of: selectedCategory) { _, _ in
+            if isSelectMode { isSelectMode = false; selectedIDs.removeAll() }
+        }
+        .onChange(of: selectedRoom) { _, _ in
+            if isSelectMode { isSelectMode = false; selectedIDs.removeAll() }
         }
     }
 
@@ -150,6 +269,38 @@ struct ItemsView: View {
         }
     }
 
+    @ViewBuilder
+    private var moveToRoomSheet: some View {
+        NavigationStack {
+            List {
+                Button {
+                    moveSelected(to: nil)
+                    showingMoveSheet = false
+                } label: {
+                    Label("No Room", systemImage: "xmark.circle")
+                        .foregroundStyle(.primary)
+                }
+
+                ForEach(rooms) { room in
+                    Button {
+                        moveSelected(to: room)
+                        showingMoveSheet = false
+                    } label: {
+                        Label(room.name, systemImage: room.icon)
+                            .foregroundStyle(.primary)
+                    }
+                }
+            }
+            .navigationTitle("Move to Room")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") { showingMoveSheet = false }
+                }
+            }
+        }
+    }
+
     private var emptyStateView: some View {
         VStack(spacing: 16) {
             Image(systemName: "archivebox")
@@ -167,8 +318,37 @@ struct ItemsView: View {
     }
 
     private func deleteItems(offsets: IndexSet) {
-        for index in offsets {
-            modelContext.delete(filteredItems[index])
+        undoTask?.cancel()
+        let toDelete = offsets.map { filteredItems[$0] }
+        undoMemento = toDelete.count == 1 ? DeletedItemMemento(from: toDelete[0]) : nil
+        for item in toDelete { modelContext.delete(item) }
+        if undoMemento != nil {
+            undoTask = Task {
+                try? await Task.sleep(for: .seconds(4))
+                if !Task.isCancelled {
+                    await MainActor.run { undoMemento = nil }
+                }
+            }
         }
+    }
+
+    private func bulkDelete() {
+        for id in selectedIDs {
+            if let item = filteredItems.first(where: { $0.persistentModelID == id }) {
+                modelContext.delete(item)
+            }
+        }
+        selectedIDs.removeAll()
+        isSelectMode = false
+    }
+
+    private func moveSelected(to room: Room?) {
+        for id in selectedIDs {
+            if let item = filteredItems.first(where: { $0.persistentModelID == id }) {
+                item.room = room
+            }
+        }
+        selectedIDs.removeAll()
+        isSelectMode = false
     }
 }

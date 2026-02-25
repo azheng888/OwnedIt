@@ -160,6 +160,15 @@ struct AddEditItemView: View {
                                 }
                                 .padding(3)
                             }
+                            .draggable(String(index))
+                            .dropDestination(for: String.self) { items, _ in
+                                guard let src = items.first.flatMap(Int.init) else { return false }
+                                photoData.move(
+                                    fromOffsets: IndexSet(integer: src),
+                                    toOffset: index > src ? index + 1 : index
+                                )
+                                return true
+                            }
                         }
                     }
                 }
@@ -172,13 +181,11 @@ struct AddEditItemView: View {
         Section("Basic Info") {
             HStack {
                 TextField("Name", text: $name)
-                if !isEditing {
-                    Button {
-                        showingBarcodeScanner = true
-                    } label: {
-                        Image(systemName: "barcode.viewfinder")
-                            .foregroundStyle(Color.accentColor)
-                    }
+                Button {
+                    showingBarcodeScanner = true
+                } label: {
+                    Image(systemName: "barcode.viewfinder")
+                        .foregroundStyle(Color.accentColor)
                 }
             }
 
@@ -281,7 +288,8 @@ struct AddEditItemView: View {
         serialNumber = barcode
         isLookingUpBarcode = true
 
-        guard let url = URL(string: "https://api.upcitemdb.com/prod/trial/lookup?upc=\(barcode)") else {
+        guard let encodedBarcode = barcode.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "https://api.upcitemdb.com/prod/trial/lookup?upc=\(encodedBarcode)") else {
             isLookingUpBarcode = false
             return
         }

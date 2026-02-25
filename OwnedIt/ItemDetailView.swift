@@ -33,6 +33,15 @@ struct ItemDetailView: View {
                     }
                     .tabViewStyle(.page)
                     .frame(height: 280)
+                } else {
+                    ZStack {
+                        Color(.secondarySystemBackground)
+                        Image(systemName: "photo")
+                            .font(.system(size: 48))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 200)
                 }
 
                 VStack(alignment: .leading, spacing: 20) {
@@ -142,6 +151,9 @@ struct ItemDetailView: View {
                     Button(action: { showingEditItem = true }) {
                         Label("Edit", systemImage: "pencil")
                     }
+                    Button(action: duplicateItem) {
+                        Label("Duplicate", systemImage: "plus.square.on.square")
+                    }
                     Divider()
                     Button(role: .destructive, action: { showingDeleteConfirmation = true }) {
                         Label("Delete", systemImage: "trash")
@@ -163,6 +175,33 @@ struct ItemDetailView: View {
             }
         } message: {
             Text("This action cannot be undone.")
+        }
+    }
+
+    private func duplicateItem() {
+        let copy = Item(
+            name: item.name.isEmpty ? "(Copy)" : "\(item.name) (Copy)",
+            itemDescription: item.itemDescription,
+            category: item.category ?? .other,
+            room: item.room,
+            make: item.make,
+            model: item.model,
+            serialNumber: "",
+            condition: item.condition ?? .good,
+            purchasePrice: item.purchasePrice,
+            purchaseDate: item.purchaseDate,
+            purchaseStore: item.purchaseStore,
+            currentValue: item.currentValue,
+            warrantyExpiration: item.warrantyExpiration,
+            warrantyProvider: item.warrantyProvider,
+            notes: item.notes
+        )
+        modelContext.insert(copy)
+        for photo in item.photos ?? [] {
+            guard let data = photo.imageData else { continue }
+            let photoCopy = Photo(imageData: data)
+            photoCopy.item = copy
+            modelContext.insert(photoCopy)
         }
     }
 }
