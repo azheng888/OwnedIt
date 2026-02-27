@@ -7,6 +7,12 @@ struct ItemDetailView: View {
 
     @State private var showingEditItem = false
     @State private var showingDeleteConfirmation = false
+    @State private var shareFile: ShareableFile?
+
+    private struct ShareableFile: Identifiable {
+        let id = UUID()
+        let url: URL
+    }
     @State private var selectedPhotoIndex = 0
     @State private var selectedReceipt: Receipt?
 
@@ -179,6 +185,9 @@ struct ItemDetailView: View {
                     Button(action: duplicateItem) {
                         Label("Duplicate", systemImage: "plus.square.on.square")
                     }
+                    Button(action: shareItemAsPDF) {
+                        Label("Share as PDF", systemImage: "square.and.arrow.up")
+                    }
                     Divider()
                     Button(role: .destructive, action: { showingDeleteConfirmation = true }) {
                         Label("Delete", systemImage: "trash")
@@ -196,6 +205,9 @@ struct ItemDetailView: View {
         .sheet(item: $selectedReceipt) { receipt in
             DocumentViewerView(receipt: receipt)
         }
+        .sheet(item: $shareFile) { file in
+            ShareSheet(url: file.url)
+        }
         .confirmationDialog("Delete \"\(item.name)\"?", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
             Button("Delete Item", role: .destructive) {
                 modelContext.delete(item)
@@ -204,6 +216,14 @@ struct ItemDetailView: View {
         } message: {
             Text("This action cannot be undone.")
         }
+    }
+
+    private func shareItemAsPDF() {
+        let data = ExportManager.itemPDFData(from: item)
+        let filename = "\(item.name.isEmpty ? "Item" : item.name)-Report.pdf"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+        try? data.write(to: url)
+        shareFile = ShareableFile(url: url)
     }
 
     private func duplicateItem() {
