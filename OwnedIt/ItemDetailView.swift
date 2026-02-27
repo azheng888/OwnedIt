@@ -8,8 +8,10 @@ struct ItemDetailView: View {
     @State private var showingEditItem = false
     @State private var showingDeleteConfirmation = false
     @State private var selectedPhotoIndex = 0
+    @State private var selectedReceipt: Receipt?
 
     private var photos: [Photo] { item.photos ?? [] }
+    private var receipts: [Receipt] { item.receipts ?? [] }
     private var category: ItemCategory { item.category ?? .other }
     private var condition: ItemCondition { item.condition ?? .good }
 
@@ -132,6 +134,29 @@ struct ItemDetailView: View {
                         }
                     }
 
+                    if !receipts.isEmpty {
+                        DetailSection(title: "Receipts & Documents") {
+                            ForEach(receipts) { receipt in
+                                Button { selectedReceipt = receipt } label: {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: receipt.isPDF ? "doc.richtext.fill" : "photo.fill")
+                                            .foregroundStyle(receipt.isPDF ? .red : .blue)
+                                            .frame(width: 24)
+                                        Text(receipt.filename.isEmpty ? "Document" : receipt.filename)
+                                            .foregroundStyle(.primary)
+                                            .lineLimit(1)
+                                            .truncationMode(.middle)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                        Image(systemName: "chevron.right")
+                                            .font(.caption)
+                                            .foregroundStyle(.tertiary)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+
                     if let added = item.dateAdded {
                         Text("Added \(added.formatted(date: .long, time: .omitted))")
                             .font(.caption)
@@ -168,6 +193,9 @@ struct ItemDetailView: View {
                 AddEditItemView(item: item)
             }
         }
+        .sheet(item: $selectedReceipt) { receipt in
+            DocumentViewerView(receipt: receipt)
+        }
         .confirmationDialog("Delete \"\(item.name)\"?", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
             Button("Delete Item", role: .destructive) {
                 modelContext.delete(item)
@@ -202,6 +230,12 @@ struct ItemDetailView: View {
             let photoCopy = Photo(imageData: data)
             photoCopy.item = copy
             modelContext.insert(photoCopy)
+        }
+        for receipt in item.receipts ?? [] {
+            guard let data = receipt.fileData else { continue }
+            let receiptCopy = Receipt(fileData: data, filename: receipt.filename)
+            receiptCopy.item = copy
+            modelContext.insert(receiptCopy)
         }
     }
 }

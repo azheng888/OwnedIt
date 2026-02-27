@@ -8,6 +8,7 @@ struct OwnedItApp: App {
             Item.self,
             Room.self,
             Photo.self,
+            Receipt.self,
         ])
 
         // Try CloudKit-backed store first; fall back to local if not provisioned

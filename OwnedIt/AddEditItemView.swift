@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import PhotosUI
+import UniformTypeIdentifiers
 
 struct AddEditItemView: View {
     @Environment(\.modelContext) private var modelContext
@@ -45,6 +46,11 @@ struct AddEditItemView: View {
     @State private var photoData: [Data] = []         // working copy of image bytes
     @State private var selectedPhotos: [PhotosPickerItem] = []
 
+    // Documents
+    @State private var receiptData: [(data: Data, filename: String)] = []
+    @State private var showingDocumentPicker = false
+    @State private var documentImportError: String?
+
     // Barcode scanner
     @State private var showingBarcodeScanner = false
     @State private var isLookingUpBarcode = false
@@ -62,6 +68,7 @@ struct AddEditItemView: View {
             valueSection
             warrantySection
             notesSection
+            documentsSection
         }
         .navigationTitle(isEditing ? "Edit Item" : "New Item")
         .navigationBarTitleDisplayMode(.inline)
@@ -100,6 +107,18 @@ struct AddEditItemView: View {
                 lookUpBarcode(barcode)
             }
         }
+        .fileImporter(
+            isPresented: $showingDocumentPicker,
+            allowedContentTypes: [.pdf, .png, .jpeg, UTType("public.heic") ?? .jpeg],
+            allowsMultipleSelection: true
+        ) { result in
+            handleDocumentImport(result)
+        }
+        .alert("Import Failed", isPresented: .constant(documentImportError != nil)) {
+            Button("OK") { documentImportError = nil }
+        } message: {
+            Text(documentImportError ?? "")
+        }
         .overlay {
             if isLookingUpBarcode {
                 ZStack {
@@ -122,6 +141,36 @@ struct AddEditItemView: View {
     }
 
     // MARK: - Sections
+
+    private var documentsSection: some View {
+        Section("Receipts & Documents") {
+            Button {
+                showingDocumentPicker = true
+            } label: {
+                Label("Add Document…", systemImage: "doc.badge.plus")
+            }
+
+            ForEach(Array(receiptData.enumerated()), id: \.offset) { index, entry in
+                HStack(spacing: 12) {
+                    let isPDF = entry.data.prefix(4) == Data([0x25, 0x50, 0x44, 0x46])
+                    Image(systemName: isPDF ? "doc.richtext.fill" : "photo.fill")
+                        .foregroundStyle(isPDF ? .red : .blue)
+                        .frame(width: 24)
+                    Text(entry.filename.isEmpty ? "Document" : entry.filename)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button {
+                        receiptData.remove(at: index)
+                    } label: {
+                        Image(systemName: "trash")
+                            .foregroundStyle(.red)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
 
     private var photosSection: some View {
         Section("Photos") {
@@ -282,6 +331,22 @@ struct AddEditItemView: View {
         }
     }
 
+    // MARK: - Document Import
+
+    private func handleDocumentImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            for url in urls {
+                guard url.startAccessingSecurityScopedResource() else { continue }
+                defer { url.stopAccessingSecurityScopedResource() }
+                guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { continue }
+                receiptData.append((data: data, filename: url.lastPathComponent))
+            }
+        case .failure(let error):
+            documentImportError = error.localizedDescription
+        }
+    }
+
     // MARK: - Barcode Lookup
 
     private func lookUpBarcode(_ barcode: String) {
@@ -340,6 +405,10 @@ struct AddEditItemView: View {
         warrantyProvider = item.warrantyProvider
         notes = item.notes
         photoData = (item.photos ?? []).compactMap { $0.imageData }
+        receiptData = (item.receipts ?? []).compactMap {
+            guard let data = $0.fileData else { return nil }
+            return (data, $0.filename)
+        }
 
         if let price = item.purchasePrice { hasPurchasePrice = true; purchasePrice = price }
         if let date = item.purchaseDate   { hasPurchaseDate = true;  purchaseDate = date }
@@ -378,6 +447,14 @@ struct AddEditItemView: View {
             let photo = Photo(imageData: data)
             photo.item = target
             modelContext.insert(photo)
+        }
+
+        // Replace receipts
+        for existing in target.receipts ?? [] { modelContext.delete(existing) }
+        for entry in receiptData {
+            let receipt = Receipt(fileData: entry.data, filename: entry.filename)
+            receipt.item = target
+            modelContext.insert(receipt)
         }
 
         dismiss()

@@ -20,6 +20,8 @@ final class Item {
     var warrantyProvider: String = ""
     @Relationship(deleteRule: .cascade, inverse: \Photo.item)
     var photos: [Photo]?
+    @Relationship(deleteRule: .cascade, inverse: \Receipt.item)
+    var receipts: [Receipt]?
     var notes: String = ""
     var dateAdded: Date?
 
@@ -56,6 +58,7 @@ final class Item {
         self.warrantyExpiration = warrantyExpiration
         self.warrantyProvider = warrantyProvider
         self.photos = []
+        self.receipts = []
         self.notes = notes
         self.dateAdded = Date()
     }
@@ -84,6 +87,7 @@ struct DeletedItemMemento {
     let warrantyProvider: String
     let notes: String
     let photoData: [Data]
+    let receiptData: [(data: Data, filename: String)]
 
     init(from item: Item) {
         self.name = item.name
@@ -102,6 +106,10 @@ struct DeletedItemMemento {
         self.warrantyProvider = item.warrantyProvider
         self.notes = item.notes
         self.photoData = (item.photos ?? []).compactMap { $0.imageData }
+        self.receiptData = (item.receipts ?? []).compactMap {
+            guard let data = $0.fileData else { return nil }
+            return (data, $0.filename)
+        }
     }
 }
 
@@ -128,5 +136,10 @@ func restoreItem(from memento: DeletedItemMemento, in context: ModelContext) {
         let photo = Photo(imageData: data)
         photo.item = item
         context.insert(photo)
+    }
+    for entry in memento.receiptData {
+        let receipt = Receipt(fileData: entry.data, filename: entry.filename)
+        receipt.item = item
+        context.insert(receipt)
     }
 }
