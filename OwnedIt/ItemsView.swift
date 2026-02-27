@@ -18,7 +18,7 @@ struct ItemsView: View {
     @State private var showingMoveSheet = false
 
     // Undo toast
-    @State private var undoMemento: DeletedItemMemento?
+    @State private var undoMementos: [DeletedItemMemento] = []
     @State private var undoTask: Task<Void, Never>?
 
     enum SortOrder: String, CaseIterable {
@@ -183,14 +183,18 @@ struct ItemsView: View {
             moveToRoomSheet
         }
         .overlay(alignment: .bottom) {
-            if let memento = undoMemento {
+            if !undoMementos.isEmpty {
                 HStack {
-                    Text("Deleted \"\(memento.name)\"")
+                    Text(undoMementos.count == 1
+                         ? "Deleted \"\(undoMementos[0].name)\""
+                         : "Deleted \(undoMementos.count) items")
                     Spacer()
                     Button("Undo") {
                         undoTask?.cancel()
-                        restoreItem(from: memento, in: modelContext)
-                        undoMemento = nil
+                        for memento in undoMementos {
+                            restoreItem(from: memento, in: modelContext)
+                        }
+                        undoMementos = []
                     }
                     .fontWeight(.semibold)
                 }
@@ -198,11 +202,11 @@ struct ItemsView: View {
                 .padding(.vertical, 12)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
                 .padding(.horizontal, 16)
-                .padding(.bottom, isSelectMode && !selectedIDs.isEmpty ? 80 : 16)
+                .padding(.bottom, 16)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.spring, value: undoMemento != nil)
+        .animation(.spring, value: undoMementos.isEmpty)
         .onChange(of: searchText) { _, _ in
             if isSelectMode { isSelectMode = false; selectedIDs.removeAll() }
         }
@@ -320,26 +324,28 @@ struct ItemsView: View {
     private func deleteItems(offsets: IndexSet) {
         undoTask?.cancel()
         let toDelete = offsets.map { filteredItems[$0] }
-        undoMemento = toDelete.count == 1 ? DeletedItemMemento(from: toDelete[0]) : nil
+        undoMementos = toDelete.map { DeletedItemMemento(from: $0) }
         for item in toDelete { modelContext.delete(item) }
-        if undoMemento != nil {
-            undoTask = Task {
-                try? await Task.sleep(for: .seconds(4))
-                if !Task.isCancelled {
-                    await MainActor.run { undoMemento = nil }
-                }
-            }
-        }
+        scheduleUndoDismissal()
     }
 
     private func bulkDelete() {
-        for id in selectedIDs {
-            if let item = filteredItems.first(where: { $0.persistentModelID == id }) {
-                modelContext.delete(item)
-            }
-        }
+        undoTask?.cancel()
+        let toDelete = filteredItems.filter { selectedIDs.contains($0.persistentModelID) }
+        undoMementos = toDelete.map { DeletedItemMemento(from: $0) }
+        for item in toDelete { modelContext.delete(item) }
         selectedIDs.removeAll()
         isSelectMode = false
+        scheduleUndoDismissal()
+    }
+
+    private func scheduleUndoDismissal() {
+        undoTask = Task {
+            try? await Task.sleep(for: .seconds(4))
+            if !Task.isCancelled {
+                await MainActor.run { undoMementos = [] }
+            }
+        }
     }
 
     private func moveSelected(to room: Room?) {
