@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct ContentView: View {
+    @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
+
     var body: some View {
         TabView {
             NavigationStack {
@@ -23,6 +25,12 @@ struct ContentView: View {
             .tabItem {
                 Label("Summary", systemImage: "chart.bar.fill")
             }
+        }
+        .fullScreenCover(isPresented: Binding(
+            get: { !hasSeenOnboarding },
+            set: { _ in }
+        )) {
+            OnboardingView { hasSeenOnboarding = true }
         }
     }
 }
