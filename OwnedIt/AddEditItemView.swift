@@ -7,6 +7,7 @@ struct AddEditItemView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Room.name) private var rooms: [Room]
+    @Query private var allItems: [Item]
 
     var item: Item? = nil
     var preselectedRoom: Room? = nil
@@ -46,6 +47,9 @@ struct AddEditItemView: View {
     @State private var photoData: [Data] = []         // working copy of image bytes
     @State private var selectedPhotos: [PhotosPickerItem] = []
 
+    // Duplicate detection
+    @State private var showingDuplicateAlert = false
+
     // Documents
     @State private var receiptData: [(data: Data, filename: String)] = []
     @State private var showingDocumentPicker = false
@@ -77,7 +81,7 @@ struct AddEditItemView: View {
                 Button("Cancel") { dismiss() }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button("Save") { save() }
+                Button("Save") { attemptSave() }
                     .fontWeight(.semibold)
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
             }
@@ -137,6 +141,12 @@ struct AddEditItemView: View {
             Button("OK") { barcodeLookupError = nil }
         } message: {
             Text(barcodeLookupError ?? "")
+        }
+        .alert("Duplicate Item", isPresented: $showingDuplicateAlert) {
+            Button("Add Anyway") { save() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("An item named \"\(name.trimmingCharacters(in: .whitespaces))\" already exists.")
         }
     }
 
@@ -391,6 +401,19 @@ struct AddEditItemView: View {
     }
 
     // MARK: - Load / Save
+
+    private func attemptSave() {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        let isDuplicate = allItems.contains {
+            $0.persistentModelID != item?.persistentModelID &&
+            $0.name.lowercased() == trimmed.lowercased()
+        }
+        if isDuplicate {
+            showingDuplicateAlert = true
+        } else {
+            save()
+        }
+    }
 
     private func loadFrom(_ item: Item) {
         name = item.name

@@ -4,18 +4,29 @@ import SwiftData
 struct RoomsView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Room.name) private var rooms: [Room]
+    @Query(filter: #Predicate<Item> { item in item.room == nil }) private var unassignedItems: [Item]
 
     @State private var showingAddRoom = false
 
     let columns = [GridItem(.adaptive(minimum: 155), spacing: 16)]
 
+    private var unassignedValue: Double {
+        unassignedItems.compactMap { $0.displayValue }.reduce(0, +)
+    }
+
     var body: some View {
         Group {
-            if rooms.isEmpty {
+            if rooms.isEmpty && unassignedItems.isEmpty {
                 emptyStateView
             } else {
                 ScrollView {
                     LazyVGrid(columns: columns, spacing: 16) {
+                        if !unassignedItems.isEmpty {
+                            NavigationLink(destination: UnassignedItemsView()) {
+                                UnassignedCardView(count: unassignedItems.count, totalValue: unassignedValue)
+                            }
+                            .buttonStyle(.plain)
+                        }
                         ForEach(rooms) { room in
                             NavigationLink(destination: RoomDetailView(room: room)) {
                                 RoomCardView(room: room)
@@ -121,6 +132,75 @@ struct RoomsView: View {
                 .padding(.top, 8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - Unassigned Card
+
+struct UnassignedCardView: View {
+    let count: Int
+    let totalValue: Double
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.secondary.opacity(0.15))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: "tray")
+                        .font(.system(size: 22))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text("\(count)")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundStyle(.secondary)
+            }
+
+            Text("Unassigned")
+                .font(.headline)
+                .lineLimit(1)
+
+            if totalValue > 0 {
+                Text(totalValue, format: .currency(code: Locale.current.currency?.identifier ?? "USD"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text(count == 1 ? "1 item" : "\(count) items")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+// MARK: - Unassigned Items View
+
+struct UnassignedItemsView: View {
+    @Query(filter: #Predicate<Item> { item in item.room == nil }, sort: \Item.name)
+    private var items: [Item]
+
+    var body: some View {
+        List {
+            ForEach(items) { item in
+                NavigationLink(destination: ItemDetailView(item: item)) {
+                    ItemRowView(item: item)
+                }
+            }
+        }
+        .navigationTitle("Unassigned")
+        .navigationBarTitleDisplayMode(.large)
+        .overlay {
+            if items.isEmpty {
+                ContentUnavailableView("No Unassigned Items", systemImage: "tray")
+            }
+        }
     }
 }
 
