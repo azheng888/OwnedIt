@@ -6,6 +6,7 @@ struct SummaryView: View {
     @Query(sort: \Room.name) private var rooms: [Room]
 
     @State private var exportItem: ExportFile?
+    @State private var showingSettings = false
 
     struct ExportFile: Identifiable {
         let id = UUID()
@@ -84,8 +85,15 @@ struct SummaryView: View {
         }
         .navigationTitle("Summary")
         .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    showingSettings = true
+                } label: {
+                    Image(systemName: "gearshape")
+                }
+            }
             if !items.isEmpty {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .navigationBarLeading) {
                     Menu {
                         Button(action: exportCSV) {
                             Label("Export CSV", systemImage: "tablecells")
@@ -101,6 +109,9 @@ struct SummaryView: View {
         }
         .sheet(item: $exportItem) { file in
             ShareSheet(url: file.url)
+        }
+        .sheet(isPresented: $showingSettings) {
+            SettingsView()
         }
     }
 
