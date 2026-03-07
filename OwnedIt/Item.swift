@@ -22,6 +22,8 @@ final class Item {
     var photos: [Photo]?
     @Relationship(deleteRule: .cascade, inverse: \Receipt.item)
     var receipts: [Receipt]?
+    @Relationship(deleteRule: .cascade, inverse: \Reminder.item)
+    var reminders: [Reminder]?
     var notes: String = ""
     var dateAdded: Date?
 
@@ -59,6 +61,7 @@ final class Item {
         self.warrantyProvider = warrantyProvider
         self.photos = []
         self.receipts = []
+        self.reminders = []
         self.notes = notes
         self.dateAdded = Date()
     }
@@ -88,6 +91,7 @@ struct DeletedItemMemento {
     let notes: String
     let photoData: [Data]
     let receiptData: [(data: Data, filename: String)]
+    let reminderData: [(title: String, notes: String, intervalDays: Int, nextDueDate: Date)]
 
     init(from item: Item) {
         self.name = item.name
@@ -109,6 +113,9 @@ struct DeletedItemMemento {
         self.receiptData = (item.receipts ?? []).compactMap {
             guard let data = $0.fileData else { return nil }
             return (data, $0.filename)
+        }
+        self.reminderData = (item.reminders ?? []).map {
+            ($0.title, $0.notes, $0.intervalDays, $0.nextDueDate)
         }
     }
 }
@@ -141,5 +148,13 @@ func restoreItem(from memento: DeletedItemMemento, in context: ModelContext) {
         let receipt = Receipt(fileData: entry.data, filename: entry.filename)
         receipt.item = item
         context.insert(receipt)
+    }
+    for entry in memento.reminderData {
+        let reminder = Reminder(title: entry.title, notes: entry.notes, intervalDays: entry.intervalDays, nextDueDate: entry.nextDueDate)
+        reminder.item = item
+        context.insert(reminder)
+        if entry.nextDueDate > Date() {
+            NotificationManager.shared.schedule(reminder, itemName: item.name)
+        }
     }
 }

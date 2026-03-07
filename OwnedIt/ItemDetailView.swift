@@ -15,9 +15,12 @@ struct ItemDetailView: View {
     }
     @State private var selectedPhotoIndex = 0
     @State private var selectedReceipt: Receipt?
+    @State private var showingAddReminder = false
+    @State private var selectedReminder: Reminder?
 
     private var photos: [Photo] { item.photos ?? [] }
     private var receipts: [Receipt] { item.receipts ?? [] }
+    private var reminders: [Reminder] { (item.reminders ?? []).sorted { $0.nextDueDate < $1.nextDueDate } }
     private var category: ItemCategory { item.category ?? .other }
     private var condition: ItemCondition { item.condition ?? .good }
 
@@ -163,6 +166,40 @@ struct ItemDetailView: View {
                         }
                     }
 
+                    if !reminders.isEmpty {
+                        DetailSection(title: "Maintenance") {
+                            ForEach(reminders) { reminder in
+                                HStack(spacing: 10) {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(reminder.title)
+                                            .foregroundStyle(.primary)
+                                        Text("Due \(reminder.nextDueDate.formatted(.dateTime.month(.abbreviated).day().year())) · \(reminder.intervalLabel)")
+                                            .font(.caption)
+                                            .foregroundStyle(reminder.isDue ? .red : .secondary)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { selectedReminder = reminder }
+
+                                    if reminder.isDue {
+                                        Image(systemName: "exclamationmark.circle.fill")
+                                            .foregroundStyle(.orange)
+                                    }
+                                    Button { markReminderDone(reminder) } label: {
+                                        Image(systemName: "checkmark.circle")
+                                            .foregroundStyle(.green)
+                                    }
+                                    .buttonStyle(.plain)
+                                    Button { deleteReminder(reminder) } label: {
+                                        Image(systemName: "trash")
+                                            .foregroundStyle(.red)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                    }
+
                     if let added = item.dateAdded {
                         Text("Added \(added.formatted(date: .long, time: .omitted))")
                             .font(.caption)
@@ -188,6 +225,9 @@ struct ItemDetailView: View {
                     Button(action: shareItemAsPDF) {
                         Label("Share as PDF", systemImage: "square.and.arrow.up")
                     }
+                    Button(action: { showingAddReminder = true }) {
+                        Label("Add Reminder", systemImage: "bell.badge")
+                    }
                     Divider()
                     Button(role: .destructive, action: { showingDeleteConfirmation = true }) {
                         Label("Delete", systemImage: "trash")
@@ -205,6 +245,12 @@ struct ItemDetailView: View {
         .sheet(item: $selectedReceipt) { receipt in
             DocumentViewerView(receipt: receipt)
         }
+        .sheet(isPresented: $showingAddReminder) {
+            NavigationStack { AddEditReminderView(item: item) }
+        }
+        .sheet(item: $selectedReminder) { reminder in
+            NavigationStack { AddEditReminderView(item: item, reminder: reminder) }
+        }
         .sheet(item: $shareFile) { file in
             ShareSheet(url: file.url)
         }
@@ -216,6 +262,17 @@ struct ItemDetailView: View {
         } message: {
             Text("This action cannot be undone.")
         }
+    }
+
+    private func markReminderDone(_ reminder: Reminder) {
+        NotificationManager.shared.cancel(reminder.notificationID)
+        reminder.advance()
+        NotificationManager.shared.schedule(reminder, itemName: item.name)
+    }
+
+    private func deleteReminder(_ reminder: Reminder) {
+        NotificationManager.shared.cancel(reminder.notificationID)
+        modelContext.delete(reminder)
     }
 
     private func shareItemAsPDF() {

@@ -4,6 +4,7 @@ import SwiftData
 struct SummaryView: View {
     @Query private var items: [Item]
     @Query(sort: \Room.name) private var rooms: [Room]
+    @Query private var allReminders: [Reminder]
 
     @State private var exportItem: ExportFile?
     @State private var showingSettings = false
@@ -41,6 +42,13 @@ struct SummaryView: View {
         Array(items.sorted { ($0.dateAdded ?? .distantPast) > ($1.dateAdded ?? .distantPast) }.prefix(5))
     }
 
+    private var upcomingMaintenance: [Reminder] {
+        let threshold = Calendar.current.date(byAdding: .day, value: 14, to: Date()) ?? Date()
+        return allReminders
+            .filter { $0.isActive && $0.nextDueDate <= threshold }
+            .sorted { $0.nextDueDate < $1.nextDueDate }
+    }
+
     private var warrantiesExpiringSoon: [Item] {
         guard let threshold = Calendar.current.date(byAdding: .month, value: 3, to: Date()) else {
             return []
@@ -74,6 +82,7 @@ struct SummaryView: View {
                 ScrollView {
                     VStack(spacing: 20) {
                         overviewCards
+                        maintenanceAlertsSection
                         warrantyAlertsSection
                         categoryBreakdown
                         roomBreakdown
@@ -146,6 +155,64 @@ struct SummaryView: View {
                     : "—",
                 icon: "dollarsign.circle.fill",
                 color: .green
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var maintenanceAlertsSection: some View {
+        let activeReminders = allReminders.filter { $0.isActive }
+        if !activeReminders.isEmpty {
+            let hasOverdue = upcomingMaintenance.contains { $0.isDue }
+            let hasUpcoming = !upcomingMaintenance.isEmpty
+            let accentColor: Color = hasOverdue ? .red : hasUpcoming ? .orange : .primary
+
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Label("Maintenance", systemImage: "wrench.and.screwdriver.fill")
+                        .font(.headline)
+                        .foregroundStyle(accentColor)
+                    Spacer()
+                    NavigationLink(destination: MaintenanceView()) {
+                        Text("See All")
+                            .font(.subheadline)
+                    }
+                }
+
+                if upcomingMaintenance.isEmpty {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                        Text("All up to date").foregroundStyle(.secondary).font(.subheadline)
+                    }
+                } else {
+                    ForEach(upcomingMaintenance) { reminder in
+                        if let item = reminder.item {
+                            NavigationLink(destination: ItemDetailView(item: item)) {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "wrench")
+                                        .foregroundStyle(reminder.isDue ? .red : .orange)
+                                        .frame(width: 24)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(reminder.title).foregroundStyle(.primary)
+                                        Text(item.name).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Text(reminder.nextDueDate, format: .dateTime.month(.abbreviated).day().year())
+                                        .font(.caption)
+                                        .foregroundStyle(reminder.isDue ? .red : .secondary)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .padding()
+            .background(hasUpcoming ? (hasOverdue ? Color.red : Color.orange).opacity(0.08) : Color(.secondarySystemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(hasUpcoming ? (hasOverdue ? Color.red : Color.orange).opacity(0.25) : Color.clear, lineWidth: 1)
             )
         }
     }
