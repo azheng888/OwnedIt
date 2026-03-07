@@ -314,6 +314,19 @@ struct ItemDetailView: View {
             receiptCopy.item = copy
             modelContext.insert(receiptCopy)
         }
+        for reminder in item.reminders ?? [] {
+            let reminderCopy = Reminder(
+                title: reminder.title,
+                notes: reminder.notes,
+                intervalDays: reminder.intervalDays,
+                nextDueDate: reminder.nextDueDate
+            )
+            reminderCopy.item = copy
+            modelContext.insert(reminderCopy)
+            if reminder.nextDueDate > Date() {
+                NotificationManager.shared.schedule(reminderCopy, itemName: copy.name)
+            }
+        }
     }
 }
 

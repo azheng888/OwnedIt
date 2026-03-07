@@ -186,7 +186,7 @@ struct AddEditItemView: View {
         Section("Photos") {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    PhotosPicker(selection: $selectedPhotos, maxSelectionCount: 10, matching: .images) {
+                    PhotosPicker(selection: $selectedPhotos, maxSelectionCount: max(1, 10 - photoData.count), matching: .images) {
                         VStack(spacing: 6) {
                             Image(systemName: "camera.fill")
                                 .font(.system(size: 22))
