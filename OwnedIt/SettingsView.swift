@@ -46,6 +46,9 @@ struct SettingsView: View {
                         Text("\(appVersion) (\(buildNumber))")
                             .foregroundStyle(.secondary)
                     }
+                    NavigationLink(destination: PrivacyPolicyView()) {
+                        Text("Privacy Policy")
+                    }
                 }
             }
             .navigationTitle("Settings")
