@@ -4,7 +4,6 @@ struct ItemRowView: View {
     let item: Item
 
     private var category: ItemCategory { item.category ?? .other }
-    private var condition: ItemCondition { item.condition ?? .good }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -18,10 +17,19 @@ struct ItemRowView: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.name.isEmpty ? "Unnamed Item" : item.name)
-                    .font(.body)
-                    .fontWeight(.medium)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(item.name.isEmpty ? "Unnamed Item" : item.name)
+                        .font(.body)
+                        .fontWeight(.medium)
+                        .lineLimit(1)
+
+                    if item.quantity > 1 {
+                        Text("×\(item.quantity)")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.secondary)
+                    }
+                }
 
                 HStack(spacing: 4) {
                     Text(category.rawValue)
@@ -48,13 +56,15 @@ struct ItemRowView: View {
                         .fontWeight(.semibold)
                 }
 
-                Text(condition.rawValue)
-                    .font(.caption2)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(condition.color.opacity(0.15))
-                    .foregroundStyle(condition.color)
-                    .clipShape(Capsule())
+                if let condition = item.condition {
+                    Text(condition.rawValue)
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(condition.color.opacity(0.15))
+                        .foregroundStyle(condition.color)
+                        .clipShape(Capsule())
+                }
             }
         }
         .padding(.vertical, 4)

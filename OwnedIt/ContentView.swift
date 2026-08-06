@@ -1,7 +1,13 @@
 import SwiftUI
+import SwiftData
 
 struct ContentView: View {
     @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
+    @Query private var reminders: [Reminder]
+
+    private var overdueCount: Int {
+        reminders.filter { $0.isActive && $0.isDue }.count
+    }
 
     var body: some View {
         TabView {
@@ -18,6 +24,14 @@ struct ContentView: View {
             .tabItem {
                 Label("Rooms", systemImage: "house.fill")
             }
+
+            NavigationStack {
+                MaintenanceView()
+            }
+            .tabItem {
+                Label("Maintenance", systemImage: "wrench.and.screwdriver.fill")
+            }
+            .badge(overdueCount)
 
             NavigationStack {
                 SummaryView()

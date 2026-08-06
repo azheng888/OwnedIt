@@ -40,10 +40,12 @@ struct RoomDetailView: View {
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: { showingAddItem = true }) {
+                    Image(systemName: "plus")
+                }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
-                    Button(action: { showingAddItem = true }) {
-                        Label("Add Item", systemImage: "plus")
-                    }
                     Button(action: { showingEditRoom = true }) {
                         Label("Edit Room", systemImage: "pencil")
                     }

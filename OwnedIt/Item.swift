@@ -6,6 +6,7 @@ final class Item {
     var id: UUID?
     var name: String = ""
     var itemDescription: String = ""
+    var quantity: Int = 1
     var category: ItemCategory?
     var room: Room?
     var make: String = ""
@@ -30,12 +31,13 @@ final class Item {
     init(
         name: String = "",
         itemDescription: String = "",
+        quantity: Int = 1,
         category: ItemCategory = .other,
         room: Room? = nil,
         make: String = "",
         model: String = "",
         serialNumber: String = "",
-        condition: ItemCondition = .good,
+        condition: ItemCondition? = nil,
         purchasePrice: Double? = nil,
         purchaseDate: Date? = nil,
         purchaseStore: String = "",
@@ -47,6 +49,7 @@ final class Item {
         self.id = UUID()
         self.name = name
         self.itemDescription = itemDescription
+        self.quantity = max(1, quantity)
         self.category = category
         self.room = room
         self.make = make
@@ -66,8 +69,14 @@ final class Item {
         self.dateAdded = Date()
     }
 
-    var displayValue: Double? {
+    /// Price per unit, preferring the tracked current value over the original purchase price.
+    var unitValue: Double? {
         currentValue ?? purchasePrice
+    }
+
+    /// Total value for this line item — unit value × quantity.
+    var displayValue: Double? {
+        unitValue.map { $0 * Double(quantity) }
     }
 }
 
@@ -76,6 +85,7 @@ final class Item {
 struct DeletedItemMemento {
     let name: String
     let itemDescription: String
+    let quantity: Int
     let category: ItemCategory?
     let room: Room?
     let make: String
@@ -96,6 +106,7 @@ struct DeletedItemMemento {
     init(from item: Item) {
         self.name = item.name
         self.itemDescription = item.itemDescription
+        self.quantity = item.quantity
         self.category = item.category
         self.room = item.room
         self.make = item.make
@@ -124,12 +135,13 @@ func restoreItem(from memento: DeletedItemMemento, in context: ModelContext) {
     let item = Item(
         name: memento.name,
         itemDescription: memento.itemDescription,
+        quantity: memento.quantity,
         category: memento.category ?? .other,
         room: memento.room,
         make: memento.make,
         model: memento.model,
         serialNumber: memento.serialNumber,
-        condition: memento.condition ?? .good,
+        condition: memento.condition,
         purchasePrice: memento.purchasePrice,
         purchaseDate: memento.purchaseDate,
         purchaseStore: memento.purchaseStore,

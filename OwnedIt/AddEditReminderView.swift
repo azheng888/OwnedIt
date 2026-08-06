@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 struct AddEditReminderView: View {
     @Environment(\.modelContext) private var modelContext
@@ -13,6 +14,7 @@ struct AddEditReminderView: View {
     @State private var intervalOption: IntervalOption = .monthly
     @State private var customDays = 30
     @State private var nextDueDate = Calendar.current.date(byAdding: .month, value: 1, to: Date()) ?? Date()
+    @State private var showingPermissionAlert = false
 
     private var isEditing: Bool { reminder != nil }
 
@@ -69,7 +71,21 @@ struct AddEditReminderView: View {
                 if intervalOption == .custom { customDays = reminder.intervalDays }
                 nextDueDate = reminder.nextDueDate
             }
-            NotificationManager.shared.requestPermission()
+            NotificationManager.shared.requestPermission { granted in
+                if !granted {
+                    showingPermissionAlert = true
+                }
+            }
+        }
+        .alert("Notifications Disabled", isPresented: $showingPermissionAlert) {
+            Button("Open Settings") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            }
+            Button("Not Now", role: .cancel) {}
+        } message: {
+            Text("This reminder will be saved, but you won't get an alert when it's due until notifications are enabled in Settings.")
         }
     }
 

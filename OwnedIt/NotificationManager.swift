@@ -4,8 +4,17 @@ final class NotificationManager {
     static let shared = NotificationManager()
     private init() {}
 
-    func requestPermission() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { _, _ in }
+    /// Requests notification permission (prompts only if not yet determined) and reports
+    /// whether alerts are actually authorized, on the main thread.
+    func requestPermission(completion: @escaping (Bool) -> Void = { _ in }) {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge, .sound]) { granted, _ in
+            DispatchQueue.main.async { completion(granted) }
+        }
+    }
+
+    /// Current authorization status, without prompting the user.
+    func authorizationStatus() async -> UNAuthorizationStatus {
+        await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
     }
 
     func schedule(_ reminder: Reminder, itemName: String) {

@@ -7,7 +7,7 @@ struct ExportManager {
 
     static func csvData(from items: [Item]) -> Data {
         var rows: [String] = [
-            "Name,Category,Room,Make,Model,Serial Number,Condition,Purchase Price,Purchase Date,Current Value,Warranty Expires,Store,Notes,Date Added"
+            "Name,Category,Room,Make,Model,Serial Number,Condition,Purchase Price,Purchase Date,Current Value,Warranty Expires,Store,Notes,Date Added,Quantity"
         ]
 
         let dateFormatter = DateFormatter()
@@ -22,14 +22,15 @@ struct ExportManager {
                 csvEscape(item.make),
                 csvEscape(item.model),
                 csvEscape(item.serialNumber),
-                csvEscape((item.condition ?? .good).rawValue),
+                csvEscape(item.condition?.rawValue ?? ""),
                 item.purchasePrice.map { String(format: "%.2f", $0) } ?? "",
                 item.purchaseDate.map { dateFormatter.string(from: $0) } ?? "",
                 item.currentValue.map { String(format: "%.2f", $0) } ?? "",
                 item.warrantyExpiration.map { dateFormatter.string(from: $0) } ?? "",
                 csvEscape(item.purchaseStore),
                 csvEscape(item.notes),
-                item.dateAdded.map { dateFormatter.string(from: $0) } ?? ""
+                item.dateAdded.map { dateFormatter.string(from: $0) } ?? "",
+                String(item.quantity)
             ]
             rows.append(fields.joined(separator: ","))
         }
@@ -207,9 +208,10 @@ struct ExportManager {
         let valueStr = item.displayValue
             .map { $0.formatted(.currency(code: Locale.current.currency?.identifier ?? "USD")) } ?? "—"
 
-        (truncate(item.name, to: 28) as NSString).draw(at: CGPoint(x: col.name, y: y + 4), withAttributes: attrs)
+        let displayName = item.quantity > 1 ? "\(item.name) (×\(item.quantity))" : item.name
+        (truncate(displayName, to: 28) as NSString).draw(at: CGPoint(x: col.name, y: y + 4), withAttributes: attrs)
         ((item.category ?? .other).rawValue as NSString).draw(at: CGPoint(x: col.category, y: y + 4), withAttributes: secondaryAttrs)
-        ((item.condition ?? .good).rawValue as NSString).draw(at: CGPoint(x: col.condition, y: y + 4), withAttributes: secondaryAttrs)
+        ((item.condition?.rawValue ?? "—") as NSString).draw(at: CGPoint(x: col.condition, y: y + 4), withAttributes: secondaryAttrs)
         (valueStr as NSString).draw(at: CGPoint(x: col.value, y: y + 4), withAttributes: secondaryAttrs)
         (warrantyStr as NSString).draw(at: CGPoint(x: col.warranty, y: y + 4), withAttributes: secondaryAttrs)
     }
@@ -253,14 +255,20 @@ struct ExportManager {
                 }
             }
 
+            let quantity: Int = {
+                guard row.count >= 15, let parsed = Int(row[14]) else { return 1 }
+                return max(1, parsed)
+            }()
+
             let item = Item(
                 name: row[0],
+                quantity: quantity,
                 category: category,
                 room: room,
                 make: row[3],
                 model: row[4],
                 serialNumber: row[5],
-                condition: ItemCondition(rawValue: row[6]) ?? .good,
+                condition: ItemCondition(rawValue: row[6]),
                 purchasePrice: Double(row[7]),
                 purchaseDate: row[8].isEmpty ? nil : dateFormatter.date(from: row[8]),
                 purchaseStore: row[11],
@@ -391,9 +399,10 @@ struct ExportManager {
             let currency = Locale.current.currency?.identifier ?? "USD"
 
             var overview: [(String, String)] = [
-                ("Category", (item.category ?? .other).rawValue),
-                ("Condition", (item.condition ?? .good).rawValue)
+                ("Category", (item.category ?? .other).rawValue)
             ]
+            if let condition = item.condition { overview.append(("Condition", condition.rawValue)) }
+            if item.quantity > 1 { overview.append(("Quantity", "\(item.quantity)")) }
             if let room = item.room { overview.append(("Room", room.name)) }
             if !item.itemDescription.isEmpty { overview.append(("Description", item.itemDescription)) }
             drawSection(title: "Overview", rows: overview)
@@ -405,13 +414,22 @@ struct ExportManager {
             drawSection(title: "Identification", rows: identification)
 
             var purchase: [(String, String)] = []
-            if let price = item.purchasePrice { purchase.append(("Price", price.formatted(.currency(code: currency)))) }
+            if let price = item.purchasePrice {
+                purchase.append((item.quantity > 1 ? "Price/each" : "Price", price.formatted(.currency(code: currency))))
+                if item.quantity > 1 {
+                    purchase.append(("Total", (price * Double(item.quantity)).formatted(.currency(code: currency))))
+                }
+            }
             if let date = item.purchaseDate { purchase.append(("Date", df.string(from: date))) }
             if !item.purchaseStore.isEmpty { purchase.append(("Store", item.purchaseStore)) }
             drawSection(title: "Purchase", rows: purchase)
 
             if let value = item.currentValue {
-                drawSection(title: "Current Value", rows: [("Value", value.formatted(.currency(code: currency)))])
+                var currentValueRows = [(item.quantity > 1 ? "Value/each" : "Value", value.formatted(.currency(code: currency)))]
+                if item.quantity > 1 {
+                    currentValueRows.append(("Total", (value * Double(item.quantity)).formatted(.currency(code: currency))))
+                }
+                drawSection(title: "Current Value", rows: currentValueRows)
             }
 
             var warranty: [(String, String)] = []

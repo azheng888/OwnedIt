@@ -1,9 +1,11 @@
 import SwiftUI
 import SwiftData
+import UIKit
 
 struct MaintenanceView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Reminder.nextDueDate) private var reminders: [Reminder]
+    @State private var notificationsDenied = false
 
     private var overdue: [Reminder] {
         reminders.filter { $0.isActive && $0.isDue }
@@ -21,6 +23,31 @@ struct MaintenanceView: View {
 
     var body: some View {
         List {
+            if notificationsDenied {
+                Section {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: "bell.slash.fill")
+                            .foregroundStyle(.orange)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Notifications Are Off")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                            Text("Reminders below won't alert you when they're due.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Settings") {
+                            if let url = URL(string: UIApplication.openSettingsURLString) {
+                                UIApplication.shared.open(url)
+                            }
+                        }
+                        .font(.caption)
+                        .buttonStyle(.bordered)
+                    }
+                }
+            }
+
             if !overdue.isEmpty {
                 Section("Overdue") {
                     ForEach(overdue) { reminder in
@@ -88,6 +115,9 @@ struct MaintenanceView: View {
         }
         .navigationTitle("Maintenance")
         .navigationBarTitleDisplayMode(.large)
+        .task {
+            notificationsDenied = await NotificationManager.shared.authorizationStatus() == .denied
+        }
     }
 
     private func markDone(_ reminder: Reminder) {

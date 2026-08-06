@@ -22,7 +22,6 @@ struct ItemDetailView: View {
     private var receipts: [Receipt] { item.receipts ?? [] }
     private var reminders: [Reminder] { (item.reminders ?? []).sorted { $0.nextDueDate < $1.nextDueDate } }
     private var category: ItemCategory { item.category ?? .other }
-    private var condition: ItemCondition { item.condition ?? .good }
 
     var body: some View {
         ScrollView {
@@ -61,8 +60,14 @@ struct ItemDetailView: View {
                         HStack(spacing: 8) {
                             Label(category.rawValue, systemImage: category.icon)
                                 .badgeStyle(color: .accentColor)
-                            Label(condition.rawValue, systemImage: "circle.fill")
-                                .badgeStyle(color: condition.color)
+                            if let condition = item.condition {
+                                Label(condition.rawValue, systemImage: "circle.fill")
+                                    .badgeStyle(color: condition.color)
+                            }
+                            if item.quantity > 1 {
+                                Label("×\(item.quantity)", systemImage: "square.stack.3d.up.fill")
+                                    .badgeStyle(color: .indigo)
+                            }
                         }
                         if !item.itemDescription.isEmpty {
                             Text(item.itemDescription)
@@ -94,10 +99,17 @@ struct ItemDetailView: View {
                         DetailSection(title: "Purchase") {
                             if let price = item.purchasePrice {
                                 DetailRow(
-                                    label: "Price",
+                                    label: item.quantity > 1 ? "Price/each" : "Price",
                                     value: price.formatted(.currency(code: Locale.current.currency?.identifier ?? "USD")),
                                     icon: "dollarsign.circle"
                                 )
+                                if item.quantity > 1 {
+                                    DetailRow(
+                                        label: "Total",
+                                        value: (price * Double(item.quantity)).formatted(.currency(code: Locale.current.currency?.identifier ?? "USD")),
+                                        icon: "sum"
+                                    )
+                                }
                             }
                             if let date = item.purchaseDate {
                                 DetailRow(label: "Date", value: date.formatted(date: .long, time: .omitted), icon: "calendar")
@@ -111,10 +123,17 @@ struct ItemDetailView: View {
                     if let value = item.currentValue {
                         DetailSection(title: "Current Value") {
                             DetailRow(
-                                label: "Value",
+                                label: item.quantity > 1 ? "Value/each" : "Value",
                                 value: value.formatted(.currency(code: Locale.current.currency?.identifier ?? "USD")),
                                 icon: "chart.line.uptrend.xyaxis"
                             )
+                            if item.quantity > 1 {
+                                DetailRow(
+                                    label: "Total",
+                                    value: (value * Double(item.quantity)).formatted(.currency(code: Locale.current.currency?.identifier ?? "USD")),
+                                    icon: "sum"
+                                )
+                            }
                         }
                     }
 
@@ -215,10 +234,12 @@ struct ItemDetailView: View {
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: { showingEditItem = true }) {
+                    Image(systemName: "pencil")
+                }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Menu {
-                    Button(action: { showingEditItem = true }) {
-                        Label("Edit", systemImage: "pencil")
-                    }
                     Button(action: duplicateItem) {
                         Label("Duplicate", systemImage: "plus.square.on.square")
                     }
@@ -287,12 +308,13 @@ struct ItemDetailView: View {
         let copy = Item(
             name: item.name.isEmpty ? "(Copy)" : "\(item.name) (Copy)",
             itemDescription: item.itemDescription,
+            quantity: item.quantity,
             category: item.category ?? .other,
             room: item.room,
             make: item.make,
             model: item.model,
             serialNumber: "",
-            condition: item.condition ?? .good,
+            condition: item.condition,
             purchasePrice: item.purchasePrice,
             purchaseDate: item.purchaseDate,
             purchaseStore: item.purchaseStore,

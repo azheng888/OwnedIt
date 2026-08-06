@@ -15,8 +15,9 @@ struct AddEditItemView: View {
     // Basic Info
     @State private var name = ""
     @State private var itemDescription = ""
+    @State private var quantity = 1
     @State private var category: ItemCategory = .other
-    @State private var condition: ItemCondition = .good
+    @State private var condition: ItemCondition? = nil
 
     // Location
     @State private var selectedRoom: Room?
@@ -251,6 +252,8 @@ struct AddEditItemView: View {
             TextField("Description", text: $itemDescription, axis: .vertical)
                 .lineLimit(3, reservesSpace: false)
 
+            Stepper("Quantity: \(quantity)", value: $quantity, in: 1...999)
+
             Picker("Category", selection: $category) {
                 ForEach(ItemCategory.allCases, id: \.self) { cat in
                     Label(cat.rawValue, systemImage: cat.icon).tag(cat)
@@ -258,8 +261,9 @@ struct AddEditItemView: View {
             }
 
             Picker("Condition", selection: $condition) {
+                Text("Not Set").tag(ItemCondition?.none)
                 ForEach(ItemCondition.allCases, id: \.self) { cond in
-                    Text(cond.rawValue).tag(cond)
+                    Text(cond.rawValue).tag(ItemCondition?.some(cond))
                 }
             }
         }
@@ -285,13 +289,23 @@ struct AddEditItemView: View {
     }
 
     private var purchaseSection: some View {
-        Section("Purchase") {
-            Toggle("Purchase Price", isOn: $hasPurchasePrice.animation())
+        Section {
+            Toggle(quantity > 1 ? "Purchase Price (per unit)" : "Purchase Price", isOn: $hasPurchasePrice.animation())
             if hasPurchasePrice {
                 HStack {
                     Text(Locale.current.currencySymbol ?? "$").foregroundStyle(.secondary)
                     TextField("0.00", value: $purchasePrice, format: .number)
                         .keyboardType(.decimalPad)
+                }
+                if quantity > 1 {
+                    HStack {
+                        Text("Total for \(quantity)")
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text((purchasePrice * Double(quantity)), format: .currency(code: Locale.current.currency?.identifier ?? "USD"))
+                            .foregroundStyle(.secondary)
+                    }
+                    .font(.subheadline)
                 }
             }
 
@@ -302,17 +316,29 @@ struct AddEditItemView: View {
             }
 
             TextField("Store / Retailer", text: $purchaseStore)
+        } header: {
+            Text("Purchase")
         }
     }
 
     private var valueSection: some View {
         Section {
-            Toggle("Track Current Value", isOn: $hasCurrentValue.animation())
+            Toggle(quantity > 1 ? "Track Current Value (per unit)" : "Track Current Value", isOn: $hasCurrentValue.animation())
             if hasCurrentValue {
                 HStack {
                     Text(Locale.current.currencySymbol ?? "$").foregroundStyle(.secondary)
                     TextField("0.00", value: $currentValue, format: .number)
                         .keyboardType(.decimalPad)
+                }
+                if quantity > 1 {
+                    HStack {
+                        Text("Total for \(quantity)")
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text((currentValue * Double(quantity)), format: .currency(code: Locale.current.currency?.identifier ?? "USD"))
+                            .foregroundStyle(.secondary)
+                    }
+                    .font(.subheadline)
                 }
             }
         } header: {
@@ -418,8 +444,9 @@ struct AddEditItemView: View {
     private func loadFrom(_ item: Item) {
         name = item.name
         itemDescription = item.itemDescription
+        quantity = item.quantity
         category = item.category ?? .other
-        condition = item.condition ?? .good
+        condition = item.condition
         selectedRoom = item.room
         make = item.make
         model = item.model
@@ -450,6 +477,7 @@ struct AddEditItemView: View {
 
         target.name = name.trimmingCharacters(in: .whitespaces)
         target.itemDescription = itemDescription
+        target.quantity = quantity
         target.category = category
         target.condition = condition
         target.room = selectedRoom

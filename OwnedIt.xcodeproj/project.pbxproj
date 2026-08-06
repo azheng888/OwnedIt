@@ -10,9 +10,22 @@
 		837ABF842EE2ADAA00E5B80D /* OwnedIt.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OwnedIt.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		8353360C3024412200322B13 /* Exceptions for "OwnedIt" folder in "OwnedIt" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 837ABF832EE2ADAA00E5B80D /* OwnedIt */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		837ABF862EE2ADAA00E5B80D /* OwnedIt */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				8353360C3024412200322B13 /* Exceptions for "OwnedIt" folder in "OwnedIt" target */,
+			);
 			path = OwnedIt;
 			sourceTree = "<group>";
 		};
@@ -253,9 +266,10 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"OwnedIt/Preview Content\"";
-				DEVELOPMENT_TEAM = 53M6V3ACVR;
+				DEVELOPMENT_TEAM = 9G8GHD7W2U;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = OwnedIt/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "OwnedIt uses your camera to scan product barcodes.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -284,9 +298,10 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"OwnedIt/Preview Content\"";
-				DEVELOPMENT_TEAM = 53M6V3ACVR;
+				DEVELOPMENT_TEAM = 9G8GHD7W2U;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = OwnedIt/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "OwnedIt uses your camera to scan product barcodes.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
