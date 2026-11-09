@@ -6,31 +6,35 @@ Built with SwiftUI and SwiftData. Requires iOS 17.0+.
 
 ## What it does
 
-**Items** — Add anything to your inventory: furniture, electronics, appliances, tools, etc. Each item can have photos, purchase info, a serial number, condition rating, current value estimate, warranty date, and notes. You can scan a barcode to auto-fill product details instead of typing everything by hand.
+**Items** — Photos (camera or library, reorderable, with a cover photo), purchase info, serial number, condition, current value, warranty, notes, and attached receipts/documents. Scan a barcode to auto-fill the name, brand, model and a product photo, or scan a paper receipt straight to PDF.
 
-**Rooms** — Organize items by location. Rooms have a name, an icon, and a color. The app tracks the total value of everything in each room.
+**Rooms** — Organize items by where they live, with per-room totals.
 
-**Summary** — A dashboard showing your full inventory value, a breakdown by category and room, recently added items, and warranty alerts for anything expiring in the next 90 days.
+**Maintenance** — Recurring reminders (filters, servicing, batteries) with local notifications, pause/resume, and completion history.
 
-You can export your inventory as a CSV (for spreadsheets) or a PDF (for insurance claims, moving, etc.).
+**Summary** — Total value, a *claim readiness* score showing which items are missing photos, values or receipts, warranty and maintenance alerts, and breakdowns by category and room.
 
-## Screenshots
+**Export & import** — PDF inventory report (grouped by room) and per-item PDF records for insurance; CSV export/import that round-trips across devices and accepts most spreadsheets with a "Name" column.
 
-_Coming soon._
+**Sync** — iCloud (CloudKit) sync across your devices. Notifications are derived from the synced data, so reminders created on one device alert on all of them.
+
+## Design
+
+A warm, editorial look: paper-toned background, white cards with hairline borders, a single emerald accent, New York serif headings and large monospaced-digit numbers. Motion is short and purposeful (critically damped springs, subtle press feedback, staggered entrances) and respects Reduce Motion. Shared tokens and components live in `Theme.swift`.
 
 ## Tech
 
-- SwiftUI + SwiftData
-- VisionKit for barcode scanning (iOS 16.1+)
-- CloudKit for iCloud sync (configured, entitlement needed to enable)
-- PhotosUI for photo picking
-- PDFKit / UIGraphicsPDFRenderer for export
+- SwiftUI + SwiftData (CloudKit-backed, with local fallback)
+- VisionKit for barcode and document scanning
+- PhotosUI and the camera for photos (downscaled to 2048 px, with cached thumbnails)
+- UserNotifications for reminders and warranty alerts
+- UIGraphicsPDFRenderer for reports
 
 ## Running it
 
-Clone the repo and open `OwnedIt.xcodeproj` in Xcode 16+. Select your device or simulator and hit run. No external dependencies, no package manager needed.
+Open `OwnedIt.xcodeproj` in Xcode 16+ and run. No external dependencies.
 
-To enable iCloud sync, add the CloudKit capability in Xcode and set your container identifier in `OwnedItApp.swift`.
+For demo data in a Debug build, launch with `-seedSampleData YES` (only seeds an empty store). `-initialTab summary|items|rooms|maintenance` opens a specific tab — handy for screenshots.
 
 ## License
 

@@ -11,6 +11,9 @@ final class Room {
     var items: [Item]?
     var dateCreated: Date?
 
+    var itemCount: Int { (items ?? []).count }
+    var totalValue: Double { (items ?? []).compactMap(\.displayValue).reduce(0, +) }
+
     init(name: String, icon: String = "house", colorName: String = "blue") {
         self.id = UUID()
         self.name = name
@@ -20,19 +23,8 @@ final class Room {
         self.dateCreated = Date()
     }
 
-    var color: Color {
-        switch colorName {
-        case "red":    return .red
-        case "orange": return .orange
-        case "yellow": return .yellow
-        case "green":  return .green
-        case "blue":   return .blue
-        case "purple": return .purple
-        case "pink":   return .pink
-        case "teal":   return .teal
-        default:       return .blue
-        }
-    }
+    /// Rooms no longer use decorative colors (single neutral icon style); kept for API compatibility.
+    var color: Color { Theme.secondaryText }
 
     static let colorOptions: [(name: String, color: Color)] = [
         ("blue",   .blue),
@@ -46,7 +38,9 @@ final class Room {
     ]
 
     static let iconOptions = [
-        "house", "bed.double", "sofa", "fork.knife", "washer", "shower",
-        "car.fill", "shippingbox", "tent", "building.2", "trash", "garage"
+        "house", "sofa", "bed.double", "fork.knife", "refrigerator", "shower",
+        "washer", "desktopcomputer", "lamp.desk", "tv", "books.vertical", "figure.and.child.holdinghands",
+        "door.garage.closed", "car.fill", "wrench.and.screwdriver", "shippingbox", "archivebox", "stairs",
+        "tree", "tent", "dumbbell", "pawprint", "building.2", "suitcase"
     ]
 }

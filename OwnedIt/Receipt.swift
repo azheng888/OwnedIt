@@ -13,7 +13,11 @@ final class Receipt {
         self.filename = filename
     }
 
-    var isPDF: Bool {
-        fileData?.prefix(4) == Data([0x25, 0x50, 0x44, 0x46])
+    var isPDF: Bool { Receipt.isPDF(fileData) }
+
+    var displayName: String { filename.isEmpty ? "Document" : filename }
+
+    static func isPDF(_ data: Data?) -> Bool {
+        data?.prefix(4) == Data([0x25, 0x50, 0x44, 0x46]) // "%PDF"
     }
 }

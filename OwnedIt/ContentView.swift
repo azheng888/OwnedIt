@@ -2,21 +2,24 @@ import SwiftUI
 import SwiftData
 
 struct ContentView: View {
-    @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
-    @Query private var reminders: [Reminder]
+    @Environment(AppRouter.self) private var router
+    @AppStorage(SettingsKeys.hasSeenOnboarding) private var hasSeenOnboarding = false
+    @Query(filter: #Predicate<Reminder> { $0.isActive }) private var activeReminders: [Reminder]
 
     private var overdueCount: Int {
-        reminders.filter { $0.isActive && $0.isDue }.count
+        activeReminders.filter(\.isDue).count
     }
 
     var body: some View {
-        TabView {
+        @Bindable var router = router
+        TabView(selection: $router.selectedTab) {
             NavigationStack {
                 ItemsView()
             }
             .tabItem {
                 Label("Items", systemImage: "archivebox.fill")
             }
+            .tag(AppRouter.Tab.items)
 
             NavigationStack {
                 RoomsView()
@@ -24,6 +27,7 @@ struct ContentView: View {
             .tabItem {
                 Label("Rooms", systemImage: "house.fill")
             }
+            .tag(AppRouter.Tab.rooms)
 
             NavigationStack {
                 MaintenanceView()
@@ -32,6 +36,7 @@ struct ContentView: View {
                 Label("Maintenance", systemImage: "wrench.and.screwdriver.fill")
             }
             .badge(overdueCount)
+            .tag(AppRouter.Tab.maintenance)
 
             NavigationStack {
                 SummaryView()
@@ -39,10 +44,11 @@ struct ContentView: View {
             .tabItem {
                 Label("Summary", systemImage: "chart.bar.fill")
             }
+            .tag(AppRouter.Tab.summary)
         }
         .fullScreenCover(isPresented: Binding(
             get: { !hasSeenOnboarding },
-            set: { _ in }
+            set: { if !$0 { hasSeenOnboarding = true } }
         )) {
             OnboardingView { hasSeenOnboarding = true }
         }

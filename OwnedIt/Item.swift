@@ -69,6 +69,8 @@ final class Item {
         self.dateAdded = Date()
     }
 
+    var displayName: String { name.isEmpty ? "Unnamed Item" : name }
+
     /// Price per unit, preferring the tracked current value over the original purchase price.
     var unitValue: Double? {
         currentValue ?? purchasePrice
@@ -78,11 +80,35 @@ final class Item {
     var displayValue: Double? {
         unitValue.map { $0 * Double(quantity) }
     }
+
+    var sortedPhotos: [Photo] {
+        (photos ?? []).sorted { $0.sortIndex < $1.sortIndex }
+    }
+
+    var thumbnailData: Data? {
+        sortedPhotos.first.flatMap { $0.thumbnailData ?? $0.imageData }
+    }
+
+    var hasPhotos: Bool { !(photos ?? []).isEmpty }
+    var hasReceipts: Bool { !(receipts ?? []).isEmpty }
+
+    var isWarrantyExpired: Bool {
+        guard let exp = warrantyExpiration else { return false }
+        return exp < Calendar.current.startOfDay(for: Date())
+    }
+
+    func matches(search query: String) -> Bool {
+        let fields = [name, make, model, serialNumber, itemDescription, notes, purchaseStore,
+                      warrantyProvider, room?.name ?? "", (category ?? .other).rawValue]
+        return fields.contains { $0.localizedCaseInsensitiveContains(query) }
+    }
 }
 
 // MARK: - Undo Support
 
+/// A value snapshot of an item (and its children) so a delete can be undone.
 struct DeletedItemMemento {
+    let id: UUID?
     let name: String
     let itemDescription: String
     let quantity: Int
@@ -99,11 +125,13 @@ struct DeletedItemMemento {
     let warrantyExpiration: Date?
     let warrantyProvider: String
     let notes: String
+    let dateAdded: Date?
     let photoData: [Data]
     let receiptData: [(data: Data, filename: String)]
-    let reminderData: [(title: String, notes: String, intervalDays: Int, nextDueDate: Date)]
+    let reminderData: [(title: String, notes: String, intervalDays: Int, nextDueDate: Date, isActive: Bool)]
 
     init(from item: Item) {
+        self.id = item.id
         self.name = item.name
         self.itemDescription = item.itemDescription
         self.quantity = item.quantity
@@ -120,53 +148,105 @@ struct DeletedItemMemento {
         self.warrantyExpiration = item.warrantyExpiration
         self.warrantyProvider = item.warrantyProvider
         self.notes = item.notes
-        self.photoData = (item.photos ?? []).compactMap { $0.imageData }
+        self.dateAdded = item.dateAdded
+        self.photoData = item.sortedPhotos.compactMap { $0.imageData }
         self.receiptData = (item.receipts ?? []).compactMap {
             guard let data = $0.fileData else { return nil }
             return (data, $0.filename)
         }
         self.reminderData = (item.reminders ?? []).map {
-            ($0.title, $0.notes, $0.intervalDays, $0.nextDueDate)
+            ($0.title, $0.notes, $0.intervalDays, $0.nextDueDate, $0.isActive)
         }
     }
 }
 
-func restoreItem(from memento: DeletedItemMemento, in context: ModelContext) {
-    let item = Item(
-        name: memento.name,
-        itemDescription: memento.itemDescription,
-        quantity: memento.quantity,
-        category: memento.category ?? .other,
-        room: memento.room,
-        make: memento.make,
-        model: memento.model,
-        serialNumber: memento.serialNumber,
-        condition: memento.condition,
-        purchasePrice: memento.purchasePrice,
-        purchaseDate: memento.purchaseDate,
-        purchaseStore: memento.purchaseStore,
-        currentValue: memento.currentValue,
-        warrantyExpiration: memento.warrantyExpiration,
-        warrantyProvider: memento.warrantyProvider,
-        notes: memento.notes
-    )
-    context.insert(item)
-    for data in memento.photoData {
-        let photo = Photo(imageData: data)
-        photo.item = item
-        context.insert(photo)
+enum ItemActions {
+    /// Deletes items and returns mementos that can restore them.
+    @discardableResult
+    static func delete(_ items: [Item], in context: ModelContext) -> [DeletedItemMemento] {
+        let mementos = items.map(DeletedItemMemento.init(from:))
+        for item in items { context.delete(item) }
+        return mementos
     }
-    for entry in memento.receiptData {
-        let receipt = Receipt(fileData: entry.data, filename: entry.filename)
-        receipt.item = item
-        context.insert(receipt)
+
+    static func restore(_ memento: DeletedItemMemento, in context: ModelContext) {
+        let item = Item(
+            name: memento.name,
+            itemDescription: memento.itemDescription,
+            quantity: memento.quantity,
+            category: memento.category ?? .other,
+            room: memento.room,
+            make: memento.make,
+            model: memento.model,
+            serialNumber: memento.serialNumber,
+            condition: memento.condition,
+            purchasePrice: memento.purchasePrice,
+            purchaseDate: memento.purchaseDate,
+            purchaseStore: memento.purchaseStore,
+            currentValue: memento.currentValue,
+            warrantyExpiration: memento.warrantyExpiration,
+            warrantyProvider: memento.warrantyProvider,
+            notes: memento.notes
+        )
+        item.id = memento.id ?? UUID()
+        item.dateAdded = memento.dateAdded ?? Date()
+        context.insert(item)
+        attachChildren(to: item, photos: memento.photoData, receipts: memento.receiptData, in: context)
+        for entry in memento.reminderData {
+            let reminder = Reminder(title: entry.title, notes: entry.notes, intervalDays: entry.intervalDays, nextDueDate: entry.nextDueDate)
+            reminder.isActive = entry.isActive
+            reminder.item = item
+            context.insert(reminder)
+        }
     }
-    for entry in memento.reminderData {
-        let reminder = Reminder(title: entry.title, notes: entry.notes, intervalDays: entry.intervalDays, nextDueDate: entry.nextDueDate)
-        reminder.item = item
-        context.insert(reminder)
-        if entry.nextDueDate > Date() {
-            NotificationManager.shared.schedule(reminder, itemName: item.name)
+
+    /// Creates a copy of an item (minus serial number, which is unique per physical object).
+    @discardableResult
+    static func duplicate(_ source: Item, in context: ModelContext) -> Item {
+        let copy = Item(
+            name: source.name.isEmpty ? "(Copy)" : "\(source.name) (Copy)",
+            itemDescription: source.itemDescription,
+            quantity: source.quantity,
+            category: source.category ?? .other,
+            room: source.room,
+            make: source.make,
+            model: source.model,
+            serialNumber: "",
+            condition: source.condition,
+            purchasePrice: source.purchasePrice,
+            purchaseDate: source.purchaseDate,
+            purchaseStore: source.purchaseStore,
+            currentValue: source.currentValue,
+            warrantyExpiration: source.warrantyExpiration,
+            warrantyProvider: source.warrantyProvider,
+            notes: source.notes
+        )
+        context.insert(copy)
+        let receipts: [(data: Data, filename: String)] = (source.receipts ?? []).compactMap {
+            guard let data = $0.fileData else { return nil }
+            return (data, $0.filename)
+        }
+        attachChildren(to: copy, photos: source.sortedPhotos.compactMap(\.imageData), receipts: receipts, in: context)
+        for reminder in source.reminders ?? [] {
+            let r = Reminder(title: reminder.title, notes: reminder.notes,
+                             intervalDays: reminder.intervalDays, nextDueDate: reminder.nextDueDate)
+            r.isActive = reminder.isActive
+            r.item = copy
+            context.insert(r)
+        }
+        return copy
+    }
+
+    private static func attachChildren(to item: Item, photos: [Data], receipts: [(data: Data, filename: String)], in context: ModelContext) {
+        for (index, data) in photos.enumerated() {
+            let photo = Photo(imageData: data, sortIndex: index)
+            photo.item = item
+            context.insert(photo)
+        }
+        for entry in receipts {
+            let receipt = Receipt(fileData: entry.data, filename: entry.filename)
+            receipt.item = item
+            context.insert(receipt)
         }
     }
 }

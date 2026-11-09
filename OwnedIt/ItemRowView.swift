@@ -2,71 +2,43 @@ import SwiftUI
 
 struct ItemRowView: View {
     let item: Item
+    /// Hide the room when the list is already grouped by room.
+    var showsRoom: Bool = true
 
-    private var category: ItemCategory { item.category ?? .other }
+    private var meta: String {
+        var parts: [String] = []
+        parts.append(item.make.isEmpty ? (item.category ?? .other).rawValue : item.make)
+        if showsRoom, let room = item.room { parts.append(room.name) }
+        if item.quantity > 1 { parts.append("×\(item.quantity)") }
+        if let condition = item.condition { parts.append(condition.rawValue) }
+        return parts.joined(separator: " · ")
+    }
 
     var body: some View {
         HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.accentColor.opacity(0.15))
-                    .frame(width: 44, height: 44)
-                Image(systemName: category.icon)
-                    .font(.system(size: 20))
-                    .foregroundStyle(Color.accentColor)
+            ItemThumbnailView(item: item, size: 40)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(item.displayName)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(Theme.ink)
+                    .lineLimit(1)
+                Text(meta)
+                    .font(.footnote)
+                    .foregroundStyle(item.condition == .poor ? Theme.critical : Theme.secondaryText)
+                    .lineLimit(1)
             }
 
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(item.name.isEmpty ? "Unnamed Item" : item.name)
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .lineLimit(1)
+            Spacer(minLength: 8)
 
-                    if item.quantity > 1 {
-                        Text("×\(item.quantity)")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                HStack(spacing: 4) {
-                    Text(category.rawValue)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    if let room = item.room {
-                        Text("·")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(room.name)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-
-            Spacer()
-
-            VStack(alignment: .trailing, spacing: 4) {
-                if let value = item.displayValue {
-                    Text(value, format: .currency(code: Locale.current.currency?.identifier ?? "USD"))
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                }
-
-                if let condition = item.condition {
-                    Text(condition.rawValue)
-                        .font(.caption2)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(condition.color.opacity(0.15))
-                        .foregroundStyle(condition.color)
-                        .clipShape(Capsule())
-                }
+            if let value = item.displayValue {
+                Text(value, format: AppFormat.currency(for: value))
+                    .font(.body)
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.ink)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
     }
 }

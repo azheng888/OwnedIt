@@ -9,42 +9,59 @@ struct RoomDetailView: View {
     @State private var showingEditRoom = false
     @State private var showingAddItem = false
     @State private var showingDeleteConfirmation = false
-    @State private var undoMemento: DeletedItemMemento?
-    @State private var undoTask: Task<Void, Never>?
+    @State private var undoMementos: [DeletedItemMemento] = []
 
     private var sortedItems: [Item] {
         (room.items ?? []).sorted { ($0.dateAdded ?? .distantPast) > ($1.dateAdded ?? .distantPast) }
     }
 
-    private var totalValue: Double {
-        (room.items ?? []).compactMap { $0.displayValue }.reduce(0, +)
+    var body: some View {
+        if room.isDeleted || room.modelContext == nil {
+            ContentUnavailableView("Room Deleted", systemImage: "trash")
+        } else {
+            content
+        }
     }
 
-    var body: some View {
-        Group {
-            if (room.items ?? []).isEmpty {
-                emptyStateView
+    private var content: some View {
+        let items = sortedItems
+        return List {
+            Section {
+                header
+            }
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+
+            if items.isEmpty {
+                Section {
+                    Button { showingAddItem = true } label: {
+                        Label("Add the first item to \(room.name)", systemImage: "plus.circle.fill")
+                    }
+                }
             } else {
-                List {
-                    ForEach(sortedItems) { item in
+                Section {
+                    ForEach(items) { item in
                         NavigationLink(destination: ItemDetailView(item: item)) {
                             ItemRowView(item: item)
                         }
                     }
-                    .onDelete(perform: deleteItems)
+                    .onDelete { offsets in
+                        undoMementos = ItemActions.delete(offsets.map { items[$0] }, in: modelContext)
+                    }
                 }
-                .listStyle(.insetGrouped)
             }
         }
+        .listStyle(.insetGrouped)
+        .themedList()
         .navigationTitle(room.name)
-        .navigationBarTitleDisplayMode(.large)
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .topBarTrailing) {
                 Button(action: { showingAddItem = true }) {
                     Image(systemName: "plus")
                 }
+                .accessibilityLabel("Add Item")
             }
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button(action: { showingEditRoom = true }) {
                         Label("Edit Room", systemImage: "pencil")
@@ -56,21 +73,7 @@ struct RoomDetailView: View {
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
-            }
-        }
-        .safeAreaInset(edge: .bottom) {
-            if !(room.items ?? []).isEmpty && totalValue > 0 {
-                HStack {
-                    Text("\((room.items ?? []).count) items")
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text("Total: \(totalValue.formatted(.currency(code: Locale.current.currency?.identifier ?? "USD")))")
-                        .fontWeight(.semibold)
-                }
-                .font(.subheadline)
-                .padding(.horizontal)
-                .padding(.vertical, 12)
-                .background(.bar)
+                .accessibilityLabel("More")
             }
         }
         .sheet(isPresented: $showingEditRoom) {
@@ -83,66 +86,33 @@ struct RoomDetailView: View {
                 AddEditItemView(preselectedRoom: room)
             }
         }
-        .overlay(alignment: .bottom) {
-            if let memento = undoMemento {
-                HStack {
-                    Text("Deleted \"\(memento.name)\"")
-                    Spacer()
-                    Button("Undo") {
-                        undoTask?.cancel()
-                        restoreItem(from: memento, in: modelContext)
-                        undoMemento = nil
-                    }
-                    .fontWeight(.semibold)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-                .padding(.horizontal, 16)
-                .padding(.bottom, 16)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .animation(.spring, value: undoMemento != nil)
+        .undoDeleteToast($undoMementos)
         .confirmationDialog("Delete \"\(room.name)\"?", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
             Button("Delete Room", role: .destructive) {
-                modelContext.delete(room)
                 dismiss()
+                modelContext.delete(room)
             }
         } message: {
-            Text("Items in this room will not be deleted, but will be unassigned from the room.")
+            Text("Items in this room won't be deleted — they'll move to Unassigned.")
         }
     }
 
-    private var emptyStateView: some View {
-        VStack(spacing: 16) {
-            Image(systemName: room.icon)
-                .font(.system(size: 64))
-                .foregroundStyle(room.color.opacity(0.5))
-            Text("No Items in \(room.name)")
-                .font(.title3)
-                .fontWeight(.semibold)
-                .foregroundStyle(.secondary)
-            Button("Add Item") {
-                showingAddItem = true
+    private var header: some View {
+        HStack(spacing: 14) {
+            IconTile(systemName: room.icon, size: 48)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(room.totalValue, format: AppFormat.wholeCurrency)
+                    .font(.hero(28))
+                    .foregroundStyle(Theme.ink)
+                    .contentTransition(.numericText(value: room.totalValue))
+                    .animation(Motion.snappy, value: room.totalValue)
+                Text(room.itemCount.pluralized("item"))
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondaryText)
             }
-            .buttonStyle(.borderedProminent)
+            Spacer()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private func deleteItems(offsets: IndexSet) {
-        undoTask?.cancel()
-        let toDelete = offsets.map { sortedItems[$0] }
-        undoMemento = toDelete.count == 1 ? DeletedItemMemento(from: toDelete[0]) : nil
-        for item in toDelete { modelContext.delete(item) }
-        if undoMemento != nil {
-            undoTask = Task {
-                try? await Task.sleep(for: .seconds(4))
-                if !Task.isCancelled {
-                    await MainActor.run { undoMemento = nil }
-                }
-            }
-        }
+        .card()
+        .accessibilityElement(children: .combine)
     }
 }

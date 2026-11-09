@@ -16,7 +16,11 @@ When iCloud sync is enabled, your data is synced to your personal iCloud account
 
 ## Barcode Lookup
 
-When you scan a barcode, the barcode number is sent to [UPCitemdb](https://www.upcitemdb.com) to look up product information such as name and brand. No personal information is transmitted as part of this request. You can review UPCitemdb's privacy policy at upcitemdb.com.
+When you scan a barcode, the barcode number is sent to [UPCitemdb](https://www.upcitemdb.com) to look up product information such as name, brand and a product image. If a product image is returned, it is downloaded from the image host listed by UPCitemdb. No personal information is transmitted as part of these requests.
+
+## Camera
+
+The camera is used only when you choose to photograph an item, scan a barcode, or scan a document. Images stay on your device (and in your iCloud account if sync is on). You can review UPCitemdb's privacy policy at upcitemdb.com.
 
 ## Photos and Documents
 

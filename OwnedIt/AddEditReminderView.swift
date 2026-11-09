@@ -5,16 +5,22 @@ import UIKit
 struct AddEditReminderView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Query(sort: \Item.name) private var allItems: [Item]
 
-    let item: Item
+    /// The item to attach to. When nil (adding from the Maintenance tab) the user picks one.
+    var item: Item? = nil
     var reminder: Reminder? = nil
 
+    @State private var selectedItem: Item?
     @State private var title = ""
     @State private var notes = ""
     @State private var intervalOption: IntervalOption = .monthly
     @State private var customDays = 30
     @State private var nextDueDate = Calendar.current.date(byAdding: .month, value: 1, to: Date()) ?? Date()
+    @State private var isActive = true
     @State private var showingPermissionAlert = false
+    @State private var showingDeleteConfirmation = false
+    @State private var didLoad = false
 
     private var isEditing: Bool { reminder != nil }
 
@@ -22,10 +28,43 @@ struct AddEditReminderView: View {
         intervalOption == .custom ? customDays : intervalOption.rawValue
     }
 
+    private var canSave: Bool {
+        !title.trimmingCharacters(in: .whitespaces).isEmpty && (selectedItem != nil)
+    }
+
+    private static let suggestions = [
+        "Replace air filter", "Clean filter", "Descale", "Check batteries",
+        "Service", "Clean coils", "Replace water filter", "Software update",
+    ]
+
     var body: some View {
         Form {
-            Section("Reminder") {
+            if item == nil && reminder == nil {
+                Section("Item") {
+                    Picker("Item", selection: $selectedItem) {
+                        Text("Choose…").tag(Item?.none)
+                        ForEach(allItems) { item in
+                            Text(item.displayName).tag(Item?.some(item))
+                        }
+                    }
+                }
+            }
+
+            Section {
                 TextField("Title (e.g. Change air filter)", text: $title)
+                if title.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(Self.suggestions, id: \.self) { suggestion in
+                                Button(suggestion) { title = suggestion }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                            }
+                        }
+                    }
+                }
+            } header: {
+                Text("Reminder")
             }
 
             Section("Repeats") {
@@ -36,80 +75,128 @@ struct AddEditReminderView: View {
                 }
                 if intervalOption == .custom {
                     Stepper(
-                        "Every \(customDays) day\(customDays == 1 ? "" : "s")",
-                        value: $customDays, in: 1...365
+                        "Every \(customDays.pluralized("day"))",
+                        value: $customDays, in: 1...730
                     )
                 }
             }
 
-            Section("Next Due") {
-                DatePicker("Date", selection: $nextDueDate, displayedComponents: .date)
+            Section {
+                DatePicker("Next Due", selection: $nextDueDate, displayedComponents: .date)
+            } footer: {
+                Text("You'll get a notification at \(NotificationManager.reminderHour) AM on the due date.")
             }
 
             Section("Notes") {
                 TextField("Optional notes…", text: $notes, axis: .vertical)
-                    .lineLimit(3, reservesSpace: false)
+                    .lineLimit(1...5)
+            }
+
+            if isEditing {
+                Section {
+                    Toggle("Active", isOn: $isActive)
+                } footer: {
+                    Text("Paused reminders stay on the item but don't notify you.")
+                }
+
+                if let last = reminder?.lastCompletedDate {
+                    Section {
+                        LabeledContent("Last Done", value: last.formatted(date: .long, time: .omitted))
+                    }
+                }
+
+                Section {
+                    Button("Delete Reminder", role: .destructive) { showingDeleteConfirmation = true }
+                }
             }
         }
-        .navigationTitle(isEditing ? "Edit Reminder" : "Add Reminder")
+        .themedList()
+        .navigationTitle(isEditing ? "Edit Reminder" : "New Reminder")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
+            ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") { dismiss() }
             }
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .confirmationAction) {
                 Button("Save") { save() }
                     .fontWeight(.semibold)
-                    .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(!canSave)
+            }
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { dismissKeyboard() }
+                    .fontWeight(.semibold)
             }
         }
         .onAppear {
+            guard !didLoad else { return }
+            didLoad = true
+            selectedItem = item ?? reminder?.item
             if let reminder {
                 title = reminder.title
                 notes = reminder.notes
                 intervalOption = IntervalOption.from(days: reminder.intervalDays)
                 if intervalOption == .custom { customDays = reminder.intervalDays }
                 nextDueDate = reminder.nextDueDate
-            }
-            NotificationManager.shared.requestPermission { granted in
-                if !granted {
-                    showingPermissionAlert = true
-                }
+                isActive = reminder.isActive
             }
         }
-        .alert("Notifications Disabled", isPresented: $showingPermissionAlert) {
+        .onChange(of: intervalOption) { _, option in
+            // For new reminders, keep the due date one interval out as the user changes it.
+            guard !isEditing, option != .custom else { return }
+            nextDueDate = Calendar.current.date(byAdding: .day, value: option.rawValue, to: Date()) ?? nextDueDate
+        }
+        .confirmationDialog("Delete this reminder?", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                if let reminder { modelContext.delete(reminder) }
+                dismiss()
+            }
+        }
+        .alert("Notifications Are Off", isPresented: $showingPermissionAlert) {
             Button("Open Settings") {
                 if let url = URL(string: UIApplication.openSettingsURLString) {
                     UIApplication.shared.open(url)
                 }
+                dismiss()
             }
-            Button("Not Now", role: .cancel) {}
+            Button("OK", role: .cancel) { dismiss() }
         } message: {
-            Text("This reminder will be saved, but you won't get an alert when it's due until notifications are enabled in Settings.")
+            Text("Your reminder was saved, but you won't be alerted when it's due until notifications are enabled for OwnedIt in Settings.")
         }
     }
 
     private func save() {
-        let days = effectiveIntervalDays
+        guard let target = selectedItem else { return }
+        let trimmedTitle = title.trimmingCharacters(in: .whitespaces)
+        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
         if let existing = reminder {
-            NotificationManager.shared.cancel(existing.notificationID)
-            existing.title = title.trimmingCharacters(in: .whitespaces)
-            existing.notes = notes
-            existing.intervalDays = days
+            if existing.nextDueDate != nextDueDate || existing.intervalDays != effectiveIntervalDays {
+                existing.notificationID = UUID().uuidString
+            }
+            existing.title = trimmedTitle
+            existing.notes = trimmedNotes
+            existing.intervalDays = effectiveIntervalDays
             existing.nextDueDate = nextDueDate
-            NotificationManager.shared.schedule(existing, itemName: item.name)
+            existing.isActive = isActive
         } else {
             let newReminder = Reminder(
-                title: title.trimmingCharacters(in: .whitespaces),
-                notes: notes,
-                intervalDays: days,
+                title: trimmedTitle,
+                notes: trimmedNotes,
+                intervalDays: effectiveIntervalDays,
                 nextDueDate: nextDueDate
             )
-            newReminder.item = item
+            newReminder.item = target
             modelContext.insert(newReminder)
-            NotificationManager.shared.schedule(newReminder, itemName: item.name)
         }
-        dismiss()
+
+        // Ask for permission at the moment it's clearly useful, not on screen open.
+        NotificationManager.shared.requestPermission { granted in
+            if granted || !isActive {
+                dismiss()
+            } else {
+                showingPermissionAlert = true
+            }
+        }
     }
 }
 
@@ -141,6 +228,6 @@ private enum IntervalOption: Int, CaseIterable, Identifiable {
     }
 
     static func from(days: Int) -> IntervalOption {
-        return allCases.first { $0.rawValue == days } ?? .custom
+        allCases.first { $0.rawValue == days } ?? .custom
     }
 }

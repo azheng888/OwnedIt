@@ -2,110 +2,167 @@ import SwiftUI
 import SwiftData
 import CloudKit
 import UniformTypeIdentifiers
+import UserNotifications
 
 struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @Query(sort: \Room.name) private var rooms: [Room]
+
+    @AppStorage(SettingsKeys.warrantyAlertsEnabled) private var warrantyAlertsEnabled = true
+    @AppStorage(SettingsKeys.hasSeenOnboarding) private var hasSeenOnboarding = true
 
     @State private var showingImportPicker = false
     @State private var importResultMessage: String?
     @State private var iCloudStatus: CKAccountStatus?
+    @State private var notificationStatus: UNAuthorizationStatus?
 
     private var appVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
+        return "\(version) (\(build))"
     }
 
-    private var buildNumber: String {
-        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
-    }
-
-    private var syncStatusText: String {
+    private var syncStatus: (text: String, color: Color) {
         switch iCloudStatus {
-        case .available:         return "On"
-        case .noAccount:         return "Signed Out"
-        case .restricted:        return "Restricted"
-        case .couldNotDetermine: return "Unknown"
-        case .temporarilyUnavailable: return "Unavailable"
-        case .none:               return "Checking…"
-        @unknown default:        return "Unknown"
+        case .available:              return ("On", Theme.positive)
+        case .noAccount:              return ("Signed Out", .secondary)
+        case .restricted:             return ("Restricted", .secondary)
+        case .temporarilyUnavailable: return ("Unavailable", Theme.warning)
+        case .couldNotDetermine:      return ("Unknown", .secondary)
+        case .none:                   return ("Checking…", .secondary)
+        @unknown default:             return ("Unknown", .secondary)
         }
-    }
-
-    private var syncStatusColor: Color {
-        iCloudStatus == .available ? .green : .secondary
     }
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    HStack {
+                    LabeledContent {
+                        Text(syncStatus.text).foregroundStyle(syncStatus.color)
+                    } label: {
                         Label("iCloud Sync", systemImage: "icloud")
-                        Spacer()
-                        Text(syncStatusText)
-                            .font(.subheadline)
-                            .foregroundStyle(syncStatusColor)
                     }
                 } header: {
                     Text("Sync")
                 } footer: {
-                    if iCloudStatus == .noAccount {
-                        Text("Sign in to iCloud in Settings to sync your inventory across devices.")
-                    } else if iCloudStatus == .available {
-                        Text("Your inventory syncs automatically to your other devices signed into this iCloud account.")
+                    switch iCloudStatus {
+                    case .noAccount:
+                        Text("Sign in to iCloud in the Settings app to sync your inventory across devices.")
+                    case .available:
+                        Text("Your inventory syncs privately to your other devices signed into this iCloud account.")
+                    default:
+                        EmptyView()
                     }
                 }
 
-                Section("Data") {
+                Section {
+                    LabeledContent {
+                        if notificationStatus == .denied {
+                            Button("Turn On") { openSystemSettings() }
+                        } else {
+                            Text(notificationStatus == .authorized ? "On" : "Not Set Up")
+                                .foregroundStyle(Theme.secondaryText)
+                        }
+                    } label: {
+                        Label("Notifications", systemImage: "bell")
+                    }
+                    Toggle(isOn: $warrantyAlertsEnabled) {
+                        Label("Warranty Expiry Alerts", systemImage: "checkmark.shield")
+                    }
+                    .onChange(of: warrantyAlertsEnabled) { _, enabled in
+                        if enabled { NotificationManager.shared.requestPermission { _ in refreshNotificationStatus() } }
+                    }
+                } header: {
+                    Text("Alerts")
+                } footer: {
+                    Text("Get a heads-up \(NotificationManager.warrantyLeadDays) days before a warranty expires, while there's still time to make a claim.")
+                }
+
+                Section {
                     Button {
                         showingImportPicker = true
                     } label: {
-                        Label("Import CSV", systemImage: "square.and.arrow.down")
+                        Label("Import from CSV", systemImage: "square.and.arrow.down")
                     }
+                } header: {
+                    Text("Data")
+                } footer: {
+                    Text("Use a file exported from OwnedIt, or any spreadsheet with a \"Name\" column. Matching columns like Room, Category and Purchase Price are picked up automatically.")
                 }
 
                 Section("About") {
-                    HStack {
-                        Text("Version")
-                        Spacer()
-                        Text("\(appVersion) (\(buildNumber))")
-                            .foregroundStyle(.secondary)
-                    }
+                    LabeledContent("Version", value: appVersion)
                     NavigationLink(destination: PrivacyPolicyView()) {
                         Text("Privacy Policy")
                     }
+                    Button("Show Welcome Tour") {
+                        dismiss()
+                        hasSeenOnboarding = false
+                    }
                 }
             }
+            .listStyle(.insetGrouped)
+            .themedList()
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .task {
                 iCloudStatus = try? await CKContainer(identifier: "iCloud.com.allan.OwnedIt").accountStatus()
+                refreshNotificationStatus()
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { refreshNotificationStatus() }
             }
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
             }
             .fileImporter(
                 isPresented: $showingImportPicker,
-                allowedContentTypes: [.commaSeparatedText],
+                allowedContentTypes: [.commaSeparatedText, .plainText],
                 allowsMultipleSelection: false
             ) { result in
-                guard case .success(let urls) = result, let url = urls.first else { return }
-                guard url.startAccessingSecurityScopedResource() else { return }
-                defer { url.stopAccessingSecurityScopedResource() }
-                guard let data = try? Data(contentsOf: url) else { return }
-                let (imported, skipped) = ExportManager.importItems(from: data, into: modelContext, existingRooms: rooms)
-                importResultMessage = skipped > 0
-                    ? "Imported \(imported) item\(imported == 1 ? "" : "s"), \(skipped) skipped."
-                    : "Imported \(imported) item\(imported == 1 ? "" : "s")."
+                handleImport(result)
             }
-            .alert("Import Complete", isPresented: .constant(importResultMessage != nil)) {
-                Button("OK") { importResultMessage = nil }
-            } message: {
-                Text(importResultMessage ?? "")
+            .messageAlert("Import", message: $importResultMessage)
+        }
+    }
+
+    private func handleImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .failure(let error):
+            importResultMessage = error.localizedDescription
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+            guard let data = try? Data(contentsOf: url) else {
+                importResultMessage = "Couldn't read \(url.lastPathComponent)."
+                return
             }
+            let outcome = ExportManager.importItems(from: data, into: modelContext, existingRooms: rooms)
+            try? modelContext.save()
+            if outcome.imported == 0 {
+                importResultMessage = "No items were found. Make sure the file has a header row with a \"Name\" column."
+            } else {
+                var parts = ["Imported \(outcome.imported.pluralized("item"))"]
+                if outcome.roomsCreated > 0 { parts.append("created \(outcome.roomsCreated.pluralized("room"))") }
+                if outcome.skipped > 0 { parts.append("skipped \(outcome.skipped) row\(outcome.skipped == 1 ? "" : "s") without a name") }
+                importResultMessage = ListFormatter.localizedString(byJoining: parts) + "."
+            }
+        }
+    }
+
+    private func refreshNotificationStatus() {
+        Task { notificationStatus = await NotificationManager.shared.authorizationStatus() }
+    }
+
+    private func openSystemSettings() {
+        if let url = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(url)
         }
     }
 }

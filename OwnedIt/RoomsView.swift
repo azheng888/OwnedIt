@@ -8,48 +8,50 @@ struct RoomsView: View {
 
     @State private var showingAddRoom = false
 
-    let columns = [GridItem(.adaptive(minimum: 155), spacing: 16)]
-
-    private var unassignedValue: Double {
-        unassignedItems.compactMap { $0.displayValue }.reduce(0, +)
-    }
+    private let columns = [GridItem(.adaptive(minimum: 160), spacing: 12)]
 
     var body: some View {
         Group {
             if rooms.isEmpty && unassignedItems.isEmpty {
-                emptyStateView
+                emptyState
             } else {
                 ScrollView {
-                    LazyVGrid(columns: columns, spacing: 16) {
+                    LazyVGrid(columns: columns, spacing: 12) {
+                        ForEach(Array(rooms.enumerated()), id: \.element.persistentModelID) { index, room in
+                            NavigationLink(destination: RoomDetailView(room: room)) {
+                                RoomCardView(name: room.name, icon: room.icon, color: room.color,
+                                             items: room.items ?? [])
+                            }
+                            .buttonStyle(.pressable)
+                            .appearEffect(index: index)
+                        }
                         if !unassignedItems.isEmpty {
                             NavigationLink(destination: UnassignedItemsView()) {
-                                UnassignedCardView(count: unassignedItems.count, totalValue: unassignedValue)
+                                RoomCardView(name: "Unassigned", icon: "tray", color: Theme.secondaryText,
+                                             items: unassignedItems)
                             }
-                            .buttonStyle(.plain)
-                        }
-                        ForEach(rooms) { room in
-                            NavigationLink(destination: RoomDetailView(room: room)) {
-                                RoomCardView(room: room)
-                            }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.pressable)
+                            .appearEffect(index: rooms.count)
                         }
                     }
-                    .padding()
+                    .padding(.horizontal)
+                    .padding(.top, 4)
 
                     if !remainingSuggestions.isEmpty {
                         suggestionsSection
-                            .padding(.horizontal)
-                            .padding(.bottom)
+                            .padding()
                     }
                 }
             }
         }
+        .themedScreen()
         .navigationTitle("Rooms")
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItem(placement: .topBarTrailing) {
                 Button(action: { showingAddRoom = true }) {
                     Image(systemName: "plus")
                 }
+                .accessibilityLabel("Add Room")
             }
         }
         .sheet(isPresented: $showingAddRoom) {
@@ -66,117 +68,64 @@ struct RoomsView: View {
     }
 
     private let suggestedRooms: [RoomSuggestion] = [
-        RoomSuggestion(name: "Living Room", icon: "sofa",         colorName: "blue"),
-        RoomSuggestion(name: "Kitchen",     icon: "fork.knife",   colorName: "orange"),
-        RoomSuggestion(name: "Bedroom",     icon: "bed.double",   colorName: "purple"),
-        RoomSuggestion(name: "Bathroom",    icon: "shower",       colorName: "teal"),
-        RoomSuggestion(name: "Garage",      icon: "car.fill",     colorName: "green"),
-        RoomSuggestion(name: "Office",      icon: "building.2",   colorName: "blue"),
-        RoomSuggestion(name: "Laundry",     icon: "washer",       colorName: "teal"),
-        RoomSuggestion(name: "Storage",     icon: "shippingbox",  colorName: "yellow"),
+        RoomSuggestion(name: "Living Room", icon: "sofa",               colorName: "blue"),
+        RoomSuggestion(name: "Kitchen",     icon: "fork.knife",         colorName: "orange"),
+        RoomSuggestion(name: "Bedroom",     icon: "bed.double",         colorName: "purple"),
+        RoomSuggestion(name: "Bathroom",    icon: "shower",             colorName: "teal"),
+        RoomSuggestion(name: "Office",      icon: "desktopcomputer",    colorName: "blue"),
+        RoomSuggestion(name: "Garage",      icon: "door.garage.closed", colorName: "green"),
+        RoomSuggestion(name: "Laundry",     icon: "washer",             colorName: "teal"),
+        RoomSuggestion(name: "Storage",     icon: "shippingbox",        colorName: "yellow"),
     ]
 
     private var remainingSuggestions: [RoomSuggestion] {
-        let existingNames = Set(rooms.map { $0.name })
-        return suggestedRooms.filter { !existingNames.contains($0.name) }
-    }
-
-    private func addSuggestion(_ suggestion: RoomSuggestion) {
-        let room = Room(name: suggestion.name, icon: suggestion.icon, colorName: suggestion.colorName)
-        modelContext.insert(room)
+        let existing = Set(rooms.map { $0.name.lowercased() })
+        return suggestedRooms.filter { !existing.contains($0.name.lowercased()) }
     }
 
     private var suggestionsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Common rooms")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(remainingSuggestions, id: \.name) { suggestion in
-                        Button {
-                            addSuggestion(suggestion)
-                        } label: {
-                            Label(suggestion.name, systemImage: suggestion.icon)
-                                .font(.subheadline)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .background(Color(.secondarySystemBackground))
-                                .clipShape(Capsule())
+            Text("Quick add").font(.subheadline).foregroundStyle(Theme.secondaryText)
+            FlowLayout(spacing: 8) {
+                ForEach(remainingSuggestions, id: \.name) { suggestion in
+                    Button {
+                        withAnimation(Motion.snappy) {
+                            modelContext.insert(Room(name: suggestion.name, icon: suggestion.icon,
+                                                     colorName: suggestion.colorName))
                         }
-                        .buttonStyle(.plain)
+                    } label: {
+                        Label(suggestion.name, systemImage: suggestion.icon)
+                            .font(.subheadline)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .foregroundStyle(Theme.ink)
+                            .background(Theme.surface, in: Capsule())
+                            .overlay(Capsule().strokeBorder(Theme.hairline))
                     }
+                    .buttonStyle(.pressable)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var emptyStateView: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "house")
-                .font(.system(size: 64))
-                .foregroundStyle(.secondary)
-            Text("No Rooms Yet")
-                .font(.title2)
-                .fontWeight(.semibold)
-            Text("Organize your items by adding rooms")
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal)
-            Button("Add Room") {
-                showingAddRoom = true
+    private var emptyState: some View {
+        VStack(spacing: 20) {
+            ContentUnavailableView {
+                Label("No Rooms Yet", systemImage: "house")
+            } description: {
+                Text("Group your things by where they live.")
+            } actions: {
+                Button("Add Room") { showingAddRoom = true }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.ink)
             }
-            .buttonStyle(.borderedProminent)
-
+            .frame(maxHeight: 320)
             suggestionsSection
-                .padding(.top, 8)
+                .padding(.horizontal)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-// MARK: - Unassigned Card
-
-struct UnassignedCardView: View {
-    let count: Int
-    let totalValue: Double
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.secondary.opacity(0.15))
-                        .frame(width: 44, height: 44)
-                    Image(systemName: "tray")
-                        .font(.system(size: 22))
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Text("\(count)")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .foregroundStyle(.secondary)
-            }
-
-            Text("Unassigned")
-                .font(.headline)
-                .lineLimit(1)
-
-            if totalValue > 0 {
-                Text(totalValue, format: .currency(code: Locale.current.currency?.identifier ?? "USD"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                Text(count == 1 ? "1 item" : "\(count) items")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 }
 
@@ -194,11 +143,12 @@ struct UnassignedItemsView: View {
                 }
             }
         }
+        .listStyle(.insetGrouped)
+        .themedList()
         .navigationTitle("Unassigned")
-        .navigationBarTitleDisplayMode(.large)
         .overlay {
             if items.isEmpty {
-                ContentUnavailableView("No Unassigned Items", systemImage: "tray")
+                ContentUnavailableView("Everything Has a Place", systemImage: "checkmark.circle")
             }
         }
     }
@@ -207,56 +157,105 @@ struct UnassignedItemsView: View {
 // MARK: - Room Card
 
 struct RoomCardView: View {
-    let room: Room
-    @Query private var roomItems: [Item]
+    let name: String
+    let icon: String
+    let color: Color
+    let items: [Item]
 
-    init(room: Room) {
-        self.room = room
-        let roomID = room.persistentModelID
-        _roomItems = Query(filter: #Predicate<Item> { item in
-            item.room?.persistentModelID == roomID
-        })
-    }
-
-    private var totalValue: Double {
-        roomItems.compactMap { $0.displayValue }.reduce(0, +)
+    private var totalValue: Double { items.compactMap(\.displayValue).reduce(0, +) }
+    private var previewItems: [Item] {
+        Array(items.filter(\.hasPhotos)
+            .sorted { ($0.displayValue ?? 0) > ($1.displayValue ?? 0) }
+            .prefix(3))
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(room.color.opacity(0.2))
-                        .frame(width: 44, height: 44)
-                    Image(systemName: room.icon)
-                        .font(.system(size: 22))
-                        .foregroundStyle(room.color)
-                }
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top) {
+                IconTile(systemName: icon, size: 40)
                 Spacer()
-                Text("\(roomItems.count)")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                    .foregroundStyle(room.color)
+                Text("\(items.count)")
+                    .font(.title2.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.ink)
+                    .contentTransition(.numericText(value: Double(items.count)))
             }
 
-            Text(room.name)
-                .font(.headline)
-                .lineLimit(1)
+            Spacer(minLength: 0)
 
-            if totalValue > 0 {
-                Text(totalValue, format: .currency(code: Locale.current.currency?.identifier ?? "USD"))
+            // Overlapping photo stack of the room's most valuable items.
+            if !previewItems.isEmpty {
+                HStack(spacing: -10) {
+                    ForEach(previewItems) { item in
+                        ItemThumbnailView(item: item, size: 30)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 30 * 0.23)
+                                    .strokeBorder(Theme.surface, lineWidth: 2)
+                            )
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name)
+                    .font(.system(size: 19, design: .serif))
+                    .foregroundStyle(Theme.ink)
+                    .lineLimit(1)
+                Text(totalValue > 0 ? totalValue.wholeCurrencyString : items.count.pluralized("item"))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                Text(roomItems.count == 1 ? "1 item" : "\(roomItems.count) items")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.secondaryText)
             }
         }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .frame(minHeight: 150, alignment: .topLeading)
+        .card()
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(name), \(items.count.pluralized("item"))\(totalValue > 0 ? ", \(totalValue.wholeCurrencyString)" : "")")
+    }
+}
+
+// MARK: - Flow layout
+
+/// Wraps children onto multiple lines (used for chips).
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = arrange(width: proposal.width ?? .infinity, subviews: subviews)
+        let height = rows.map(\.height).reduce(0, +) + spacing * CGFloat(max(rows.count - 1, 0))
+        let width = rows.map(\.width).max() ?? 0
+        return CGSize(width: proposal.width ?? width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in arrange(width: bounds.width, subviews: subviews) {
+            var x = bounds.minX
+            for index in row.indices {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private struct Row { var indices: [Int] = []; var width: CGFloat = 0; var height: CGFloat = 0 }
+
+    private func arrange(width: CGFloat, subviews: Subviews) -> [Row] {
+        var rows: [Row] = [Row()]
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            let needed = rows[rows.count - 1].indices.isEmpty ? size.width : rows[rows.count - 1].width + spacing + size.width
+            if needed > width && !rows[rows.count - 1].indices.isEmpty {
+                rows.append(Row())
+            }
+            var row = rows[rows.count - 1]
+            row.width = row.indices.isEmpty ? size.width : row.width + spacing + size.width
+            row.height = max(row.height, size.height)
+            row.indices.append(index)
+            rows[rows.count - 1] = row
+        }
+        return rows.filter { !$0.indices.isEmpty }
     }
 }

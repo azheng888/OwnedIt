@@ -1,249 +1,136 @@
 import UIKit
 import SwiftData
 
-struct ExportManager {
+enum ExportManager {
 
     // MARK: - CSV
 
+    /// Column order for export. Import matches by header name, so order changes stay compatible.
+    private enum Column: String, CaseIterable {
+        case name = "Name"
+        case category = "Category"
+        case room = "Room"
+        case make = "Make"
+        case model = "Model"
+        case serial = "Serial Number"
+        case condition = "Condition"
+        case purchasePrice = "Purchase Price"
+        case purchaseDate = "Purchase Date"
+        case currentValue = "Current Value"
+        case warrantyExpires = "Warranty Expires"
+        case store = "Store"
+        case notes = "Notes"
+        case dateAdded = "Date Added"
+        case quantity = "Quantity"
+        case description = "Description"
+        case warrantyProvider = "Warranty Provider"
+    }
+
+    /// ISO dates so files round-trip across devices with different locales.
+    private static let isoDate: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = .current
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    /// Older builds exported locale "short" dates; still accept them on import.
+    private static let legacyDate: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .short
+        f.timeStyle = .none
+        return f
+    }()
+
     static func csvData(from items: [Item]) -> Data {
-        var rows: [String] = [
-            "Name,Category,Room,Make,Model,Serial Number,Condition,Purchase Price,Purchase Date,Current Value,Warranty Expires,Store,Notes,Date Added,Quantity"
-        ]
+        var rows = [Column.allCases.map(\.rawValue).joined(separator: ",")]
 
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateStyle = .short
-        dateFormatter.timeStyle = .none
-
-        for item in items.sorted(by: { $0.name < $1.name }) {
-            let fields: [String] = [
-                csvEscape(item.name),
-                csvEscape((item.category ?? .other).rawValue),
-                csvEscape(item.room?.name ?? ""),
-                csvEscape(item.make),
-                csvEscape(item.model),
-                csvEscape(item.serialNumber),
-                csvEscape(item.condition?.rawValue ?? ""),
-                item.purchasePrice.map { String(format: "%.2f", $0) } ?? "",
-                item.purchaseDate.map { dateFormatter.string(from: $0) } ?? "",
-                item.currentValue.map { String(format: "%.2f", $0) } ?? "",
-                item.warrantyExpiration.map { dateFormatter.string(from: $0) } ?? "",
-                csvEscape(item.purchaseStore),
-                csvEscape(item.notes),
-                item.dateAdded.map { dateFormatter.string(from: $0) } ?? "",
-                String(item.quantity)
-            ]
+        for item in items.sorted(by: { $0.name.localizedStandardCompare($1.name) == .orderedAscending }) {
+            let fields: [String] = Column.allCases.map { column in
+                switch column {
+                case .name: return csvEscape(item.name)
+                case .category: return csvEscape((item.category ?? .other).rawValue)
+                case .room: return csvEscape(item.room?.name ?? "")
+                case .make: return csvEscape(item.make)
+                case .model: return csvEscape(item.model)
+                case .serial: return csvEscape(item.serialNumber)
+                case .condition: return csvEscape(item.condition?.rawValue ?? "")
+                case .purchasePrice: return item.purchasePrice.map { String(format: "%.2f", $0) } ?? ""
+                case .purchaseDate: return item.purchaseDate.map(isoDate.string(from:)) ?? ""
+                case .currentValue: return item.currentValue.map { String(format: "%.2f", $0) } ?? ""
+                case .warrantyExpires: return item.warrantyExpiration.map(isoDate.string(from:)) ?? ""
+                case .store: return csvEscape(item.purchaseStore)
+                case .notes: return csvEscape(item.notes)
+                case .dateAdded: return item.dateAdded.map(isoDate.string(from:)) ?? ""
+                case .quantity: return String(item.quantity)
+                case .description: return csvEscape(item.itemDescription)
+                case .warrantyProvider: return csvEscape(item.warrantyProvider)
+                }
+            }
             rows.append(fields.joined(separator: ","))
         }
 
-        return rows.joined(separator: "\n").data(using: .utf8) ?? Data()
+        // BOM so Excel opens UTF-8 (accents, emoji) correctly.
+        return Data([0xEF, 0xBB, 0xBF]) + (rows.joined(separator: "\r\n").data(using: .utf8) ?? Data())
     }
 
     private static func csvEscape(_ string: String) -> String {
-        if string.contains(",") || string.contains("\"") || string.contains("\n") {
-            return "\"" + string.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+        var value = string
+        // Neutralize spreadsheet formula injection (=, +, -, @ at the start of a cell).
+        if let first = value.first, "=+-@".contains(first) {
+            value = "'" + value
         }
-        return string
-    }
-
-    // MARK: - PDF
-
-    static func pdfData(from items: [Item], rooms: [Room]) -> Data {
-        let pageRect = CGRect(x: 0, y: 0, width: 612, height: 792) // US Letter
-        let renderer = UIGraphicsPDFRenderer(bounds: pageRect)
-
-        return renderer.pdfData { ctx in
-            ctx.beginPage()
-            var y: CGFloat = drawHeader(in: pageRect, y: 48, items: items)
-
-            // Group items by room (ungrouped items first)
-            var groups: [(title: String, items: [Item])] = []
-
-            let unassigned = items.filter { $0.room == nil }.sorted { $0.name < $1.name }
-            if !unassigned.isEmpty { groups.append(("Unassigned", unassigned)) }
-
-            for room in rooms.sorted(by: { $0.name < $1.name }) {
-                let roomItems = items.filter { $0.room?.persistentModelID == room.persistentModelID }.sorted { $0.name < $1.name }
-                if !roomItems.isEmpty { groups.append((room.name, roomItems)) }
-            }
-
-            let margin: CGFloat = 48
-            let rowH: CGFloat = 22
-            let col = columnLayout(in: pageRect, margin: margin)
-
-            for group in groups {
-                // Section header
-                y += 16
-                if y + 30 > pageRect.height - 48 {
-                    ctx.beginPage()
-                    y = 48
-                }
-                drawSectionHeader(group.title, y: y, margin: margin, width: pageRect.width - margin * 2)
-                y += 24
-
-                // Table header
-                if y + rowH > pageRect.height - 48 {
-                    ctx.beginPage()
-                    y = 48
-                }
-                drawTableHeader(col: col, y: y)
-                y += rowH
-
-                for item in group.items {
-                    if y + rowH > pageRect.height - 48 {
-                        ctx.beginPage()
-                        y = 48
-                        drawTableHeader(col: col, y: y)
-                        y += rowH
-                    }
-                    drawTableRow(item: item, col: col, y: y)
-                    y += rowH
-                }
-            }
-
-            // Totals footer
-            let total = items.compactMap { $0.displayValue }.reduce(0, +)
-            if total > 0 {
-                y += 20
-                if y + 24 > pageRect.height - 48 { ctx.beginPage(); y = 48 }
-                let totalStr = total.formatted(.currency(code: Locale.current.currency?.identifier ?? "USD"))
-                let attrs: [NSAttributedString.Key: Any] = [
-                    .font: UIFont.boldSystemFont(ofSize: 12),
-                    .foregroundColor: UIColor.label
-                ]
-                let text = "Total Inventory Value: \(totalStr)" as NSString
-                text.draw(at: CGPoint(x: margin, y: y), withAttributes: attrs)
-            }
+        if value.contains(",") || value.contains("\"") || value.contains("\n") || value.contains("\r") {
+            return "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\""
         }
-    }
-
-    // MARK: - PDF Helpers
-
-    private struct ColumnLayout {
-        let name: CGFloat
-        let category: CGFloat
-        let condition: CGFloat
-        let value: CGFloat
-        let warranty: CGFloat
-        let margin: CGFloat
-    }
-
-    private static func columnLayout(in pageRect: CGRect, margin: CGFloat) -> ColumnLayout {
-        let w = pageRect.width - margin * 2
-        return ColumnLayout(
-            name: margin,
-            category: margin + w * 0.32,
-            condition: margin + w * 0.55,
-            value: margin + w * 0.70,
-            warranty: margin + w * 0.84,
-            margin: margin
-        )
-    }
-
-    @discardableResult
-    private static func drawHeader(in pageRect: CGRect, y: CGFloat, items: [Item]) -> CGFloat {
-        let titleAttrs: [NSAttributedString.Key: Any] = [
-            .font: UIFont.boldSystemFont(ofSize: 22),
-            .foregroundColor: UIColor.label
-        ]
-        let subtitleAttrs: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: 11),
-            .foregroundColor: UIColor.secondaryLabel
-        ]
-        ("OwnedIt – Inventory Report" as NSString).draw(at: CGPoint(x: 48, y: y), withAttributes: titleAttrs)
-
-        let dateStr = "Generated \(Date().formatted(date: .long, time: .omitted))  ·  \(items.count) items"
-        (dateStr as NSString).draw(at: CGPoint(x: 48, y: y + 28), withAttributes: subtitleAttrs)
-
-        // Separator line
-        let path = UIBezierPath()
-        path.move(to: CGPoint(x: 48, y: y + 48))
-        path.addLine(to: CGPoint(x: pageRect.width - 48, y: y + 48))
-        UIColor.separator.setStroke()
-        path.lineWidth = 0.5
-        path.stroke()
-
-        return y + 60
-    }
-
-    private static func drawSectionHeader(_ title: String, y: CGFloat, margin: CGFloat, width: CGFloat) {
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: UIFont.boldSystemFont(ofSize: 13),
-            .foregroundColor: UIColor.label
-        ]
-        (title as NSString).draw(at: CGPoint(x: margin, y: y), withAttributes: attrs)
-    }
-
-    private static func drawTableHeader(col: ColumnLayout, y: CGFloat) {
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: UIFont.boldSystemFont(ofSize: 9),
-            .foregroundColor: UIColor.secondaryLabel
-        ]
-        for (text, x) in [("ITEM", col.name), ("CATEGORY", col.category),
-                           ("CONDITION", col.condition), ("VALUE", col.value), ("WARRANTY", col.warranty)] {
-            (text as NSString).draw(at: CGPoint(x: x, y: y + 3), withAttributes: attrs)
-        }
-        let path = UIBezierPath()
-        path.move(to: CGPoint(x: col.margin, y: y + 18))
-        path.addLine(to: CGPoint(x: col.margin + 516, y: y + 18))
-        UIColor.separator.setStroke()
-        path.lineWidth = 0.5
-        path.stroke()
-    }
-
-    private static func drawTableRow(item: Item, col: ColumnLayout, y: CGFloat) {
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: 10),
-            .foregroundColor: UIColor.label
-        ]
-        let secondaryAttrs: [NSAttributedString.Key: Any] = [
-            .font: UIFont.systemFont(ofSize: 10),
-            .foregroundColor: UIColor.secondaryLabel
-        ]
-
-        var warrantyStr = "—"
-        if let exp = item.warrantyExpiration {
-            warrantyStr = exp.formatted(.dateTime.month(.abbreviated).year())
-        }
-
-        let valueStr = item.displayValue
-            .map { $0.formatted(.currency(code: Locale.current.currency?.identifier ?? "USD")) } ?? "—"
-
-        let displayName = item.quantity > 1 ? "\(item.name) (×\(item.quantity))" : item.name
-        (truncate(displayName, to: 28) as NSString).draw(at: CGPoint(x: col.name, y: y + 4), withAttributes: attrs)
-        ((item.category ?? .other).rawValue as NSString).draw(at: CGPoint(x: col.category, y: y + 4), withAttributes: secondaryAttrs)
-        ((item.condition?.rawValue ?? "—") as NSString).draw(at: CGPoint(x: col.condition, y: y + 4), withAttributes: secondaryAttrs)
-        (valueStr as NSString).draw(at: CGPoint(x: col.value, y: y + 4), withAttributes: secondaryAttrs)
-        (warrantyStr as NSString).draw(at: CGPoint(x: col.warranty, y: y + 4), withAttributes: secondaryAttrs)
-    }
-
-    private static func truncate(_ string: String, to length: Int) -> String {
-        guard string.count > length else { return string }
-        return String(string.prefix(length - 1)) + "…"
+        return value
     }
 
     // MARK: - CSV Import
 
-    static func importItems(from data: Data, into context: ModelContext, existingRooms: [Room]) -> (imported: Int, skipped: Int) {
-        guard let text = String(data: data, encoding: .utf8) else { return (0, 0) }
-
-        let rows = parseCSV(text: text)
-        guard rows.count > 1 else { return (0, 0) }
-
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateStyle = .short
-        dateFormatter.timeStyle = .none
-
-        var roomCache = Dictionary(uniqueKeysWithValues: existingRooms.map { ($0.name.lowercased(), $0) })
+    struct ImportResult {
         var imported = 0
         var skipped = 0
+        var roomsCreated = 0
+    }
+
+    static func importItems(from data: Data, into context: ModelContext, existingRooms: [Room]) -> ImportResult {
+        guard var text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else {
+            return ImportResult()
+        }
+        if text.hasPrefix("\u{FEFF}") { text.removeFirst() }
+
+        let rows = parseCSV(text: text)
+        guard let header = rows.first, rows.count > 1 else { return ImportResult() }
+
+        // Map header names to indices (case-insensitive). Fall back to the legacy fixed order.
+        let normalized = header.map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+        var index: [Column: Int] = [:]
+        for column in Column.allCases {
+            if let i = normalized.firstIndex(of: column.rawValue.lowercased()) { index[column] = i }
+        }
+        if index[.name] == nil {
+            for (i, column) in Column.allCases.enumerated() where i < header.count { index[column] = i }
+        }
+
+        var roomCache = Dictionary(existingRooms.map { ($0.name.lowercased(), $0) }, uniquingKeysWith: { a, _ in a })
+        var result = ImportResult()
 
         for row in rows.dropFirst() {
-            guard row.count >= 13, !row[0].isEmpty else { skipped += 1; continue }
+            func value(_ column: Column) -> String {
+                guard let i = index[column], i < row.count else { return "" }
+                var v = row[i].trimmingCharacters(in: .whitespacesAndNewlines)
+                if v.hasPrefix("'"), let second = v.dropFirst().first, "=+-@".contains(second) { v.removeFirst() }
+                return v
+            }
 
-            let category = ItemCategory(rawValue: row[1]) ?? .other
+            let name = value(.name)
+            if row.allSatisfy({ $0.trimmingCharacters(in: .whitespaces).isEmpty }) { continue }
+            guard !name.isEmpty else { result.skipped += 1; continue }
 
-            var room: Room? = nil
-            let roomName = row[2]
+            var room: Room?
+            let roomName = value(.room)
             if !roomName.isEmpty {
                 if let existing = roomCache[roomName.lowercased()] {
                     room = existing
@@ -252,194 +139,381 @@ struct ExportManager {
                     context.insert(newRoom)
                     roomCache[roomName.lowercased()] = newRoom
                     room = newRoom
+                    result.roomsCreated += 1
                 }
             }
 
-            let quantity: Int = {
-                guard row.count >= 15, let parsed = Int(row[14]) else { return 1 }
-                return max(1, parsed)
-            }()
-
             let item = Item(
-                name: row[0],
-                quantity: quantity,
-                category: category,
+                name: name,
+                itemDescription: value(.description),
+                quantity: max(1, Int(value(.quantity)) ?? 1),
+                category: ItemCategory.allCases.first { $0.rawValue.lowercased() == value(.category).lowercased() } ?? .other,
                 room: room,
-                make: row[3],
-                model: row[4],
-                serialNumber: row[5],
-                condition: ItemCondition(rawValue: row[6]),
-                purchasePrice: Double(row[7]),
-                purchaseDate: row[8].isEmpty ? nil : dateFormatter.date(from: row[8]),
-                purchaseStore: row[11],
-                currentValue: Double(row[9]),
-                warrantyExpiration: row[10].isEmpty ? nil : dateFormatter.date(from: row[10]),
-                notes: row[12]
+                make: value(.make),
+                model: value(.model),
+                serialNumber: value(.serial),
+                condition: ItemCondition.allCases.first { $0.rawValue.lowercased() == value(.condition).lowercased() },
+                purchasePrice: parseNumber(value(.purchasePrice)),
+                purchaseDate: parseDate(value(.purchaseDate)),
+                purchaseStore: value(.store),
+                currentValue: parseNumber(value(.currentValue)),
+                warrantyExpiration: parseDate(value(.warrantyExpires)),
+                warrantyProvider: value(.warrantyProvider),
+                notes: value(.notes)
             )
-            if row.count >= 14, let dateAdded = dateFormatter.date(from: row[13]) {
-                item.dateAdded = dateAdded
+            if let added = parseDate(value(.dateAdded)) {
+                item.dateAdded = added
             }
             context.insert(item)
-            imported += 1
+            result.imported += 1
         }
 
-        return (imported, skipped)
+        return result
     }
 
-    private static func parseCSV(text: String) -> [[String]] {
+    /// Accepts "1299", "1,299.00", "$1,299.00", "1299.5 USD".
+    static func parseNumber(_ raw: String) -> Double? {
+        let cleaned = raw.filter { $0.isNumber || $0 == "." || $0 == "-" }
+        guard !cleaned.isEmpty else { return nil }
+        return Double(cleaned)
+    }
+
+    static func parseDate(_ raw: String) -> Date? {
+        guard !raw.isEmpty else { return nil }
+        return isoDate.date(from: raw) ?? legacyDate.date(from: raw)
+    }
+
+    static func parseCSV(text: String) -> [[String]] {
         var rows: [[String]] = []
         var row: [String] = []
         var field = ""
         var inQuotes = false
-        var i = text.startIndex
+        var iterator = Array(text).makeIterator()
+        var pending: Character? = nil
 
-        while i < text.endIndex {
-            let c = text[i]
-            let next = text.index(after: i)
+        func nextChar() -> Character? {
+            if let p = pending { pending = nil; return p }
+            return iterator.next()
+        }
 
-            if c == "\"" {
-                if inQuotes && next < text.endIndex && text[next] == "\"" {
-                    field.append("\"")
-                    i = text.index(after: next)
-                    continue
+        while let c = nextChar() {
+            if inQuotes {
+                if c == "\"" {
+                    if let n = nextChar() {
+                        if n == "\"" { field.append("\"") } else { inQuotes = false; pending = n }
+                    } else {
+                        inQuotes = false
+                    }
+                } else {
+                    field.append(c)
                 }
-                inQuotes.toggle()
-            } else if c == "," && !inQuotes {
-                row.append(field)
-                field = ""
-            } else if c == "\r" && !inQuotes {
-                row.append(field)
-                rows.append(row)
-                row = []
-                field = ""
-                if next < text.endIndex && text[next] == "\n" {
-                    i = text.index(after: next)
-                    continue
-                }
-            } else if c == "\n" && !inQuotes {
-                row.append(field)
-                rows.append(row)
-                row = []
-                field = ""
             } else {
-                field.append(c)
+                switch c {
+                case "\"": inQuotes = true
+                case ",": row.append(field); field = ""
+                case "\r\n", "\n", "\r":
+                    row.append(field); rows.append(row); row = []; field = ""
+                default: field.append(c)
+                }
             }
-
-            i = text.index(after: i)
         }
 
         if !row.isEmpty || !field.isEmpty {
             row.append(field)
             rows.append(row)
         }
-
         return rows
+    }
+
+    // MARK: - PDF (shared drawing)
+
+    /// PDFs are always light: never use dynamic colors (UIColor.label is white in Dark Mode).
+    private enum Ink {
+        static let primary = UIColor(white: 0.08, alpha: 1)
+        static let secondary = UIColor(white: 0.42, alpha: 1)
+        static let rule = UIColor(white: 0.85, alpha: 1)
+        static let accent = UIColor(red: 0x1F / 255, green: 0x6E / 255, blue: 0x52 / 255, alpha: 1)
+    }
+
+    private static let pageRect = CGRect(x: 0, y: 0, width: 612, height: 792) // US Letter
+    private static let margin: CGFloat = 48
+
+    private static func serif(_ size: CGFloat, bold: Bool = true) -> UIFont {
+        let base = UIFont.systemFont(ofSize: size, weight: bold ? .semibold : .regular)
+        return UIFont(descriptor: base.fontDescriptor.withDesign(.serif) ?? base.fontDescriptor, size: size)
+    }
+
+    private static func attrs(_ font: UIFont, _ color: UIColor, align: NSTextAlignment = .left) -> [NSAttributedString.Key: Any] {
+        let style = NSMutableParagraphStyle()
+        style.alignment = align
+        style.lineBreakMode = .byTruncatingTail
+        return [.font: font, .foregroundColor: color, .paragraphStyle: style]
+    }
+
+    private static func rule(at y: CGFloat) {
+        let path = UIBezierPath()
+        path.move(to: CGPoint(x: margin, y: y))
+        path.addLine(to: CGPoint(x: pageRect.width - margin, y: y))
+        Ink.rule.setStroke()
+        path.lineWidth = 0.5
+        path.stroke()
+    }
+
+    private static func drawFooter(page: Int) {
+        let text = "OwnedIt · Page \(page)" as NSString
+        text.draw(in: CGRect(x: margin, y: pageRect.height - 32, width: pageRect.width - margin * 2, height: 12),
+                  withAttributes: attrs(.systemFont(ofSize: 8), Ink.secondary, align: .center))
+    }
+
+    // MARK: - Inventory PDF
+
+    static func pdfData(from items: [Item], rooms: [Room]) -> Data {
+        let renderer = UIGraphicsPDFRenderer(bounds: pageRect)
+        let rowH: CGFloat = 22
+        let bottom = pageRect.height - 52
+        let width = pageRect.width - margin * 2
+        let cols: [(title: String, x: CGFloat, w: CGFloat, align: NSTextAlignment)] = [
+            ("ITEM", margin, width * 0.36, .left),
+            ("CATEGORY", margin + width * 0.37, width * 0.17, .left),
+            ("CONDITION", margin + width * 0.55, width * 0.12, .left),
+            ("WARRANTY", margin + width * 0.68, width * 0.14, .left),
+            ("VALUE", margin + width * 0.82, width * 0.18, .right),
+        ]
+
+        return renderer.pdfData { ctx in
+            var page = 0
+            var y: CGFloat = 0
+
+            func newPage() {
+                if page > 0 { drawFooter(page: page) }
+                ctx.beginPage()
+                page += 1
+                y = margin
+            }
+
+            func drawTableHeader() {
+                for col in cols {
+                    (col.title as NSString).draw(in: CGRect(x: col.x, y: y + 4, width: col.w, height: 12),
+                                                 withAttributes: attrs(.systemFont(ofSize: 8, weight: .semibold), Ink.secondary, align: col.align))
+                }
+                rule(at: y + rowH - 2)
+                y += rowH
+            }
+
+            newPage()
+
+            // Title block
+            ("Home Inventory" as NSString).draw(at: CGPoint(x: margin, y: y), withAttributes: attrs(serif(24), Ink.primary))
+            y += 32
+            let total = items.compactMap(\.displayValue).reduce(0, +)
+            let units = items.reduce(0) { $0 + $1.quantity }
+            let subtitle = "Generated \(Date().formatted(date: .long, time: .omitted)) · \(units.pluralized("item"))"
+            (subtitle as NSString).draw(at: CGPoint(x: margin, y: y), withAttributes: attrs(.systemFont(ofSize: 10), Ink.secondary))
+            if total > 0 {
+                let totalStr = "Total value  \(total.wholeCurrencyString)" as NSString
+                totalStr.draw(in: CGRect(x: margin, y: y - 2, width: width, height: 16),
+                              withAttributes: attrs(serif(13), Ink.accent, align: .right))
+            }
+            y += 22
+            rule(at: y)
+            y += 12
+
+            var groups: [(title: String, items: [Item])] = []
+            for room in rooms.sorted(by: { $0.name.localizedStandardCompare($1.name) == .orderedAscending }) {
+                let roomItems = items.filter { $0.room?.persistentModelID == room.persistentModelID }
+                    .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+                if !roomItems.isEmpty { groups.append((room.name, roomItems)) }
+            }
+            let unassigned = items.filter { $0.room == nil }
+                .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+            if !unassigned.isEmpty { groups.append(("Unassigned", unassigned)) }
+
+            for group in groups {
+                if y + 60 > bottom { newPage() }
+                y += 10
+                let groupTotal = group.items.compactMap(\.displayValue).reduce(0, +)
+                (group.title as NSString).draw(at: CGPoint(x: margin, y: y), withAttributes: attrs(serif(14), Ink.primary))
+                if groupTotal > 0 {
+                    (groupTotal.wholeCurrencyString as NSString).draw(in: CGRect(x: margin, y: y + 2, width: width, height: 14),
+                                                                 withAttributes: attrs(.systemFont(ofSize: 10, weight: .medium), Ink.secondary, align: .right))
+                }
+                y += 22
+                drawTableHeader()
+
+                for item in group.items {
+                    if y + rowH > bottom {
+                        newPage()
+                        drawTableHeader()
+                    }
+                    let name = item.quantity > 1 ? "\(item.displayName) (×\(item.quantity))" : item.displayName
+                    let values = [
+                        name,
+                        (item.category ?? .other).rawValue,
+                        item.condition?.rawValue ?? "—",
+                        item.warrantyExpiration.map { $0.formatted(.dateTime.month(.abbreviated).year()) } ?? "—",
+                        item.displayValue.map(\.currencyString) ?? "—",
+                    ]
+                    for (col, text) in zip(cols, values) {
+                        let isName = col.title == "ITEM"
+                        (text as NSString).draw(in: CGRect(x: col.x, y: y + 4, width: col.w, height: 14),
+                                                withAttributes: attrs(.systemFont(ofSize: 9.5), isName ? Ink.primary : Ink.secondary, align: col.align))
+                    }
+                    y += rowH
+                }
+            }
+
+            drawFooter(page: page)
+        }
     }
 
     // MARK: - Single Item PDF
 
     static func itemPDFData(from item: Item) -> Data {
-        let pageRect = CGRect(x: 0, y: 0, width: 612, height: 792)
         let renderer = UIGraphicsPDFRenderer(bounds: pageRect)
-        let margin: CGFloat = 48
-        let contentWidth: CGFloat = pageRect.width - margin * 2
+        let contentWidth = pageRect.width - margin * 2
+        let bottom = pageRect.height - 52
+        let labelWidth: CGFloat = 120
 
         return renderer.pdfData { ctx in
-            ctx.beginPage()
-            var y: CGFloat = margin
+            var page = 0
+            var y: CGFloat = 0
+            func newPage() {
+                if page > 0 { drawFooter(page: page) }
+                ctx.beginPage()
+                page += 1
+                y = margin
+            }
+            newPage()
 
-            // Header
-            let h1: [NSAttributedString.Key: Any] = [.font: UIFont.boldSystemFont(ofSize: 22), .foregroundColor: UIColor.label]
-            let h2: [NSAttributedString.Key: Any] = [.font: UIFont.boldSystemFont(ofSize: 16), .foregroundColor: UIColor.label]
-            let sub: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 11), .foregroundColor: UIColor.secondaryLabel]
-
-            ("OwnedIt – Item Report" as NSString).draw(at: CGPoint(x: margin, y: y), withAttributes: h1)
-            y += 28
-            (truncate(item.name.isEmpty ? "Untitled Item" : item.name, to: 60) as NSString).draw(at: CGPoint(x: margin, y: y), withAttributes: h2)
-            y += 22
-            ("Generated \(Date().formatted(date: .long, time: .omitted))" as NSString).draw(at: CGPoint(x: margin, y: y), withAttributes: sub)
-            y += 18
-
-            let sep = UIBezierPath()
-            sep.move(to: CGPoint(x: margin, y: y))
-            sep.addLine(to: CGPoint(x: pageRect.width - margin, y: y))
-            UIColor.separator.setStroke(); sep.lineWidth = 0.5; sep.stroke()
+            ("Item Record" as NSString).draw(at: CGPoint(x: margin, y: y), withAttributes: attrs(.systemFont(ofSize: 10, weight: .semibold), Ink.accent))
+            y += 16
+            let title = item.displayName as NSString
+            let titleAttrs = attrs(serif(22), Ink.primary)
+            let titleHeight = title.boundingRect(with: CGSize(width: contentWidth, height: 80), options: .usesLineFragmentOrigin, attributes: titleAttrs, context: nil).height
+            title.draw(in: CGRect(x: margin, y: y, width: contentWidth, height: ceil(titleHeight)), withAttributes: titleAttrs)
+            y += ceil(titleHeight) + 4
+            ("Generated \(Date().formatted(date: .long, time: .omitted))" as NSString)
+                .draw(at: CGPoint(x: margin, y: y), withAttributes: attrs(.systemFont(ofSize: 10), Ink.secondary))
+            y += 20
+            rule(at: y)
             y += 14
 
-            // First photo
-            if let photoData = item.photos?.first?.imageData, let image = UIImage(data: photoData) {
-                let maxH: CGFloat = 200
-                let scale = min(contentWidth / image.size.width, maxH / image.size.height)
-                let imgRect = CGRect(x: margin, y: y, width: image.size.width * scale, height: image.size.height * scale)
-                image.draw(in: imgRect)
-                y += imgRect.height + 16
-            }
-
-            // Section drawing helper
-            let labelAttrs: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 11), .foregroundColor: UIColor.secondaryLabel]
-            let valueAttrs: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 11), .foregroundColor: UIColor.label]
-            let sectionTitleAttrs: [NSAttributedString.Key: Any] = [.font: UIFont.boldSystemFont(ofSize: 13), .foregroundColor: UIColor.label]
-
-            func drawSection(title: String, rows: [(String, String)]) {
-                guard !rows.isEmpty else { return }
-                if y + 20 > pageRect.height - margin { ctx.beginPage(); y = margin }
-                (title as NSString).draw(at: CGPoint(x: margin, y: y), withAttributes: sectionTitleAttrs)
-                y += 20
-                for (label, value) in rows {
-                    if y + 18 > pageRect.height - margin { ctx.beginPage(); y = margin }
-                    (label as NSString).draw(at: CGPoint(x: margin, y: y), withAttributes: labelAttrs)
-                    (value as NSString).draw(at: CGPoint(x: margin + 130, y: y), withAttributes: valueAttrs)
-                    y += 18
+            // Photos: up to three, side by side.
+            let images = item.sortedPhotos.prefix(3).compactMap { $0.imageData.flatMap(UIImage.init(data:)) }
+            if !images.isEmpty {
+                let gap: CGFloat = 8
+                let cell = (contentWidth - gap * CGFloat(images.count - 1)) / CGFloat(images.count)
+                let height = min(cell, 200)
+                for (i, image) in images.enumerated() {
+                    let rect = CGRect(x: margin + CGFloat(i) * (cell + gap), y: y, width: cell, height: height)
+                    let scale = max(rect.width / image.size.width, rect.height / image.size.height)
+                    let drawSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+                    let drawRect = CGRect(x: rect.midX - drawSize.width / 2, y: rect.midY - drawSize.height / 2,
+                                          width: drawSize.width, height: drawSize.height)
+                    ctx.cgContext.saveGState()
+                    UIBezierPath(roundedRect: rect, cornerRadius: 6).addClip()
+                    image.draw(in: drawRect)
+                    ctx.cgContext.restoreGState()
                 }
-                y += 10
+                y += height + 18
             }
 
-            let df = DateFormatter()
-            df.dateStyle = .long; df.timeStyle = .none
-            let currency = Locale.current.currency?.identifier ?? "USD"
+            let labelAttrs = attrs(.systemFont(ofSize: 10), Ink.secondary)
+            let valueStyle = NSMutableParagraphStyle()
+            valueStyle.lineBreakMode = .byWordWrapping
+            let valueAttrs: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 10.5), .foregroundColor: Ink.primary, .paragraphStyle: valueStyle]
 
-            var overview: [(String, String)] = [
-                ("Category", (item.category ?? .other).rawValue)
-            ]
+            func drawSection(_ title: String, _ rows: [(String, String)]) {
+                guard !rows.isEmpty else { return }
+                if y + 40 > bottom { newPage() }
+                (title.uppercased() as NSString).draw(at: CGPoint(x: margin, y: y),
+                                                      withAttributes: attrs(.systemFont(ofSize: 8.5, weight: .semibold), Ink.secondary))
+                y += 14
+                rule(at: y)
+                y += 6
+                for (label, value) in rows {
+                    let valueWidth = label.isEmpty ? contentWidth : contentWidth - labelWidth
+                    let text = value as NSString
+                    let height = ceil(text.boundingRect(with: CGSize(width: valueWidth, height: .greatestFiniteMagnitude),
+                                                        options: .usesLineFragmentOrigin, attributes: valueAttrs, context: nil).height)
+                    if y + min(height, 200) > bottom { newPage() }
+                    if !label.isEmpty {
+                        (label as NSString).draw(at: CGPoint(x: margin, y: y), withAttributes: labelAttrs)
+                    }
+                    let x = label.isEmpty ? margin : margin + labelWidth
+                    // Long values (notes) can exceed a page; draw what fits and continue on the next.
+                    var remaining = value
+                    while !remaining.isEmpty {
+                        let available = bottom - y
+                        let fitted = fit(remaining, width: valueWidth, height: available, attributes: valueAttrs)
+                        (fitted as NSString).draw(with: CGRect(x: x, y: y, width: valueWidth, height: available),
+                                                  options: .usesLineFragmentOrigin, attributes: valueAttrs, context: nil)
+                        let used = ceil((fitted as NSString).boundingRect(with: CGSize(width: valueWidth, height: .greatestFiniteMagnitude),
+                                                                          options: .usesLineFragmentOrigin, attributes: valueAttrs, context: nil).height)
+                        remaining = String(remaining.dropFirst(fitted.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+                        y += used + 6
+                        if !remaining.isEmpty { newPage() }
+                    }
+                }
+                y += 12
+            }
+
+            var overview: [(String, String)] = [("Category", (item.category ?? .other).rawValue)]
             if let condition = item.condition { overview.append(("Condition", condition.rawValue)) }
             if item.quantity > 1 { overview.append(("Quantity", "\(item.quantity)")) }
             if let room = item.room { overview.append(("Room", room.name)) }
             if !item.itemDescription.isEmpty { overview.append(("Description", item.itemDescription)) }
-            drawSection(title: "Overview", rows: overview)
+            drawSection("Overview", overview)
 
             var identification: [(String, String)] = []
             if !item.make.isEmpty { identification.append(("Make", item.make)) }
             if !item.model.isEmpty { identification.append(("Model", item.model)) }
-            if !item.serialNumber.isEmpty { identification.append(("Serial #", item.serialNumber)) }
-            drawSection(title: "Identification", rows: identification)
+            if !item.serialNumber.isEmpty { identification.append(("Serial number", item.serialNumber)) }
+            drawSection("Identification", identification)
 
-            var purchase: [(String, String)] = []
+            var value: [(String, String)] = []
             if let price = item.purchasePrice {
-                purchase.append((item.quantity > 1 ? "Price/each" : "Price", price.formatted(.currency(code: currency))))
-                if item.quantity > 1 {
-                    purchase.append(("Total", (price * Double(item.quantity)).formatted(.currency(code: currency))))
-                }
+                value.append((item.quantity > 1 ? "Price (each)" : "Purchase price", price.currencyString))
             }
-            if let date = item.purchaseDate { purchase.append(("Date", df.string(from: date))) }
-            if !item.purchaseStore.isEmpty { purchase.append(("Store", item.purchaseStore)) }
-            drawSection(title: "Purchase", rows: purchase)
-
-            if let value = item.currentValue {
-                var currentValueRows = [(item.quantity > 1 ? "Value/each" : "Value", value.formatted(.currency(code: currency)))]
-                if item.quantity > 1 {
-                    currentValueRows.append(("Total", (value * Double(item.quantity)).formatted(.currency(code: currency))))
-                }
-                drawSection(title: "Current Value", rows: currentValueRows)
+            if let date = item.purchaseDate { value.append(("Purchased", date.formatted(date: .long, time: .omitted))) }
+            if !item.purchaseStore.isEmpty { value.append(("Store", item.purchaseStore)) }
+            if let current = item.currentValue {
+                value.append((item.quantity > 1 ? "Value (each)" : "Current value", current.currencyString))
             }
+            if item.quantity > 1, let total = item.displayValue { value.append(("Total value", total.wholeCurrencyString)) }
+            drawSection("Purchase & Value", value)
 
             var warranty: [(String, String)] = []
-            if let exp = item.warrantyExpiration { warranty.append(("Expires", df.string(from: exp))) }
+            if let exp = item.warrantyExpiration { warranty.append(("Expires", exp.formatted(date: .long, time: .omitted))) }
             if !item.warrantyProvider.isEmpty { warranty.append(("Provider", item.warrantyProvider)) }
-            drawSection(title: "Warranty", rows: warranty)
+            drawSection("Warranty", warranty)
+
+            let documents = (item.receipts ?? []).map(\.displayName)
+            if !documents.isEmpty {
+                drawSection("Attached Documents", documents.map { ("", "• \($0)") })
+            }
 
             if !item.notes.isEmpty {
-                drawSection(title: "Notes", rows: [("", item.notes)])
+                drawSection("Notes", [("", item.notes)])
             }
+
+            drawFooter(page: page)
         }
+    }
+
+    /// Longest prefix of `text` (broken at a word boundary) that fits in the given box.
+    private static func fit(_ text: String, width: CGFloat, height: CGFloat, attributes: [NSAttributedString.Key: Any]) -> String {
+        func h(_ s: String) -> CGFloat {
+            (s as NSString).boundingRect(with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                                         options: .usesLineFragmentOrigin, attributes: attributes, context: nil).height
+        }
+        if h(text) <= height { return text }
+        let words = text.split(separator: " ", omittingEmptySubsequences: false)
+        var low = 0, high = words.count
+        while low < high {
+            let mid = (low + high + 1) / 2
+            if h(words[0..<mid].joined(separator: " ")) <= height { low = mid } else { high = mid - 1 }
+        }
+        return low == 0 ? String(text.prefix(1)) : words[0..<low].joined(separator: " ")
     }
 }

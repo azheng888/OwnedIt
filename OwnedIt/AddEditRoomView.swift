@@ -25,64 +25,23 @@ struct AddEditRoomView: View {
                         Button {
                             selectedIcon = icon
                         } label: {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(selectedIcon == icon
-                                          ? Color.accentColor.opacity(0.2)
-                                          : Color(.tertiarySystemBackground))
-                                Image(systemName: icon)
-                                    .font(.system(size: 22))
-                                    .foregroundStyle(selectedIcon == icon ? Color.accentColor : .secondary)
-                            }
-                            .frame(height: 48)
+                            Image(systemName: icon)
+                                .font(.system(size: 20))
+                                .foregroundStyle(selectedIcon == icon ? Theme.onAccent : Theme.secondaryText)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 46)
+                                .background(selectedIcon == icon ? Theme.ink : Theme.surfaceMuted,
+                                            in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
+                        .accessibilityLabel(icon)
+                        .accessibilityAddTraits(selectedIcon == icon ? .isSelected : [])
                     }
-                }
-                .padding(.vertical, 4)
-            }
-
-            Section("Color") {
-                HStack(spacing: 14) {
-                    ForEach(Room.colorOptions, id: \.name) { option in
-                        Button {
-                            selectedColor = option.name
-                        } label: {
-                            ZStack {
-                                Circle()
-                                    .fill(option.color)
-                                    .frame(width: 32, height: 32)
-                                if selectedColor == option.name {
-                                    Image(systemName: "checkmark")
-                                        .font(.system(size: 12, weight: .bold))
-                                        .foregroundStyle(.white)
-                                }
-                            }
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.vertical, 4)
-            }
-
-            // Preview
-            Section("Preview") {
-                HStack(spacing: 12) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(previewColor.opacity(0.2))
-                            .frame(width: 44, height: 44)
-                        Image(systemName: selectedIcon)
-                            .font(.system(size: 22))
-                            .foregroundStyle(previewColor)
-                    }
-                    Text(name.isEmpty ? "Room Name" : name)
-                        .font(.headline)
-                        .foregroundStyle(name.isEmpty ? .secondary : .primary)
                 }
                 .padding(.vertical, 4)
             }
         }
+        .themedList()
         .navigationTitle(isEditing ? "Edit Room" : "New Room")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -104,9 +63,6 @@ struct AddEditRoomView: View {
         }
     }
 
-    private var previewColor: Color {
-        Room.colorOptions.first { $0.name == selectedColor }?.color ?? .blue
-    }
 
     private func save() {
         if let room {

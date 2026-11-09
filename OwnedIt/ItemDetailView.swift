@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 struct ItemDetailView: View {
     @Environment(\.modelContext) private var modelContext
@@ -8,254 +9,241 @@ struct ItemDetailView: View {
     @State private var showingEditItem = false
     @State private var showingDeleteConfirmation = false
     @State private var shareFile: ShareableFile?
-
-    private struct ShareableFile: Identifiable {
-        let id = UUID()
-        let url: URL
-    }
     @State private var selectedPhotoIndex = 0
+    @State private var photoViewerStart: PhotoViewerStart?
     @State private var selectedReceipt: Receipt?
     @State private var showingAddReminder = false
     @State private var selectedReminder: Reminder?
+    @State private var exportError: String?
 
-    private var photos: [Photo] { item.photos ?? [] }
-    private var receipts: [Receipt] { item.receipts ?? [] }
+    private struct PhotoViewerStart: Identifiable {
+        let index: Int
+        var id: Int { index }
+    }
+
+    private var photoImages: [UIImage] {
+        item.sortedPhotos.compactMap { $0.imageData.flatMap(UIImage.init(data:)) }
+    }
+    private var receipts: [Receipt] {
+        (item.receipts ?? []).sorted { $0.filename.localizedStandardCompare($1.filename) == .orderedAscending }
+    }
     private var reminders: [Reminder] { (item.reminders ?? []).sorted { $0.nextDueDate < $1.nextDueDate } }
     private var category: ItemCategory { item.category ?? .other }
 
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
+    private var subtitle: String {
+        var parts = [category.rawValue]
+        if let room = item.room { parts.append(room.name) }
+        if let condition = item.condition { parts.append(condition.rawValue) }
+        if item.quantity > 1 { parts.append("×\(item.quantity)") }
+        return parts.joined(separator: " · ")
+    }
 
-                if !photos.isEmpty {
-                    TabView(selection: $selectedPhotoIndex) {
-                        ForEach(Array(photos.enumerated()), id: \.offset) { index, photo in
-                            if let data = photo.imageData, let uiImage = UIImage(data: data) {
-                                Image(uiImage: uiImage)
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 280)
-                                    .clipped()
-                                    .tag(index)
-                            }
-                        }
-                    }
-                    .tabViewStyle(.page)
-                    .frame(height: 280)
-                } else {
-                    ZStack {
-                        Color(.secondarySystemBackground)
-                        Image(systemName: "photo")
-                            .font(.system(size: 48))
-                            .foregroundStyle(.tertiary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 200)
+    /// Label/value rows for the Details card. A non-nil color marks a semantic state.
+    private var details: [(label: String, value: String, color: Color?)] {
+        var rows: [(String, String, Color?)] = []
+        if !item.make.isEmpty { rows.append(("Make", item.make, nil)) }
+        if !item.model.isEmpty { rows.append(("Model", item.model, nil)) }
+        if !item.serialNumber.isEmpty { rows.append(("Serial", item.serialNumber, nil)) }
+        if let date = item.purchaseDate {
+            let store = item.purchaseStore.isEmpty ? "" : " · \(item.purchaseStore)"
+            rows.append(("Purchased", date.formatted(date: .abbreviated, time: .omitted) + store, nil))
+        } else if !item.purchaseStore.isEmpty {
+            rows.append(("Store", item.purchaseStore, nil))
+        }
+        if let price = item.purchasePrice, item.quantity > 1 {
+            rows.append(("Price each", price.currencyString, nil))
+        }
+        if let exp = item.warrantyExpiration {
+            let soon = exp < (Calendar.current.date(byAdding: .day, value: 90, to: Date()) ?? Date())
+            let value = item.isWarrantyExpired ? "Expired \(AppFormat.shortDate(exp))" : "Ends \(AppFormat.shortDate(exp))"
+            rows.append(("Warranty", value, item.isWarrantyExpired ? Theme.critical : (soon ? Theme.warning : nil)))
+        }
+        if !item.warrantyProvider.isEmpty { rows.append(("Coverage", item.warrantyProvider, nil)) }
+        return rows
+    }
+
+    /// Things an insurer typically asks for that this item is missing.
+    private var missingDocumentation: [String] {
+        var missing: [String] = []
+        if !item.hasPhotos { missing.append("photo") }
+        if item.unitValue == nil { missing.append("value") }
+        if !item.hasReceipts { missing.append("receipt") }
+        if item.serialNumber.isEmpty && [.electronics, .appliances, .tools, .jewelry].contains(category) {
+            missing.append("serial number")
+        }
+        return missing
+    }
+
+    var body: some View {
+        // The item can be deleted out from under us (e.g. on another device via iCloud).
+        if item.isDeleted || item.modelContext == nil {
+            ContentUnavailableView("Item Deleted", systemImage: "trash")
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
+        let images = photoImages
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                photoHeader(images)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.displayName)
+                        .font(.system(size: 30, design: .serif))
+                        .tracking(-0.4)
+                        .foregroundStyle(Theme.ink)
+                        .textSelection(.enabled)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondaryText)
                 }
 
-                VStack(alignment: .leading, spacing: 20) {
+                if let total = item.displayValue {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text(total, format: AppFormat.currency(for: total))
+                            .font(.hero(32))
+                            .foregroundStyle(Theme.ink)
+                            .contentTransition(.numericText(value: total))
+                        Text(valueCaption)
+                            .font(.subheadline)
+                            .foregroundStyle(Theme.secondaryText)
+                    }
+                }
 
+                if !item.itemDescription.isEmpty {
+                    Text(item.itemDescription)
+                        .font(.body)
+                        .foregroundStyle(Theme.ink)
+                        .textSelection(.enabled)
+                }
+
+                if !missingDocumentation.isEmpty {
+                    Button { showingEditItem = true } label: {
+                        HStack(spacing: 10) {
+                            Text("Add a \(ListFormatter.localizedString(byJoining: missingDocumentation)) for insurance.")
+                                .font(.subheadline)
+                                .foregroundStyle(Theme.ink)
+                                .multilineTextAlignment(.leading)
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(Theme.tertiaryText)
+                        }
+                        .card(padding: 14)
+                    }
+                    .buttonStyle(.pressable)
+                }
+
+                if !details.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
-                        HStack(spacing: 8) {
-                            Label(category.rawValue, systemImage: category.icon)
-                                .badgeStyle(color: .accentColor)
-                            if let condition = item.condition {
-                                Label(condition.rawValue, systemImage: "circle.fill")
-                                    .badgeStyle(color: condition.color)
-                            }
-                            if item.quantity > 1 {
-                                Label("×\(item.quantity)", systemImage: "square.stack.3d.up.fill")
-                                    .badgeStyle(color: .indigo)
-                            }
-                        }
-                        if !item.itemDescription.isEmpty {
-                            Text(item.itemDescription)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    if let room = item.room {
-                        DetailSection(title: "Location") {
-                            DetailRow(label: "Room", value: room.name, icon: room.icon)
-                        }
-                    }
-
-                    if !item.make.isEmpty || !item.model.isEmpty || !item.serialNumber.isEmpty {
-                        DetailSection(title: "Identification") {
-                            if !item.make.isEmpty {
-                                DetailRow(label: "Make", value: item.make, icon: "tag")
-                            }
-                            if !item.model.isEmpty {
-                                DetailRow(label: "Model", value: item.model, icon: "tag.fill")
-                            }
-                            if !item.serialNumber.isEmpty {
-                                DetailRow(label: "Serial #", value: item.serialNumber, icon: "number")
-                            }
-                        }
-                    }
-
-                    if item.purchasePrice != nil || item.purchaseDate != nil || !item.purchaseStore.isEmpty {
-                        DetailSection(title: "Purchase") {
-                            if let price = item.purchasePrice {
-                                DetailRow(
-                                    label: item.quantity > 1 ? "Price/each" : "Price",
-                                    value: price.formatted(.currency(code: Locale.current.currency?.identifier ?? "USD")),
-                                    icon: "dollarsign.circle"
-                                )
-                                if item.quantity > 1 {
-                                    DetailRow(
-                                        label: "Total",
-                                        value: (price * Double(item.quantity)).formatted(.currency(code: Locale.current.currency?.identifier ?? "USD")),
-                                        icon: "sum"
-                                    )
+                        CardHeader("Details")
+                        VStack(spacing: 0) {
+                            ForEach(Array(details.enumerated()), id: \.offset) { index, row in
+                                if index > 0 { Divider().overlay(Theme.divider) }
+                                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                                    Text(row.label).foregroundStyle(Theme.secondaryText)
+                                    Spacer(minLength: 12)
+                                    Text(row.value)
+                                        .foregroundStyle(row.color ?? Theme.ink)
+                                        .multilineTextAlignment(.trailing)
+                                        .monospacedDigit()
+                                        .textSelection(.enabled)
                                 }
-                            }
-                            if let date = item.purchaseDate {
-                                DetailRow(label: "Date", value: date.formatted(date: .long, time: .omitted), icon: "calendar")
-                            }
-                            if !item.purchaseStore.isEmpty {
-                                DetailRow(label: "Store", value: item.purchaseStore, icon: "storefront")
+                                .font(.body)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 12)
+                                .accessibilityElement(children: .combine)
                             }
                         }
+                        .card(padding: 0)
                     }
+                }
 
-                    if let value = item.currentValue {
-                        DetailSection(title: "Current Value") {
-                            DetailRow(
-                                label: item.quantity > 1 ? "Value/each" : "Value",
-                                value: value.formatted(.currency(code: Locale.current.currency?.identifier ?? "USD")),
-                                icon: "chart.line.uptrend.xyaxis"
-                            )
-                            if item.quantity > 1 {
-                                DetailRow(
-                                    label: "Total",
-                                    value: (value * Double(item.quantity)).formatted(.currency(code: Locale.current.currency?.identifier ?? "USD")),
-                                    icon: "sum"
-                                )
-                            }
-                        }
-                    }
-
-                    if item.warrantyExpiration != nil || !item.warrantyProvider.isEmpty {
-                        DetailSection(title: "Warranty") {
-                            if let expiration = item.warrantyExpiration {
-                                let isExpired = expiration < Date()
-                                DetailRow(
-                                    label: "Expires",
-                                    value: expiration.formatted(date: .long, time: .omitted),
-                                    icon: isExpired ? "exclamationmark.circle.fill" : "checkmark.shield",
-                                    valueColor: isExpired ? .red : .primary
-                                )
-                            }
-                            if !item.warrantyProvider.isEmpty {
-                                DetailRow(label: "Provider", value: item.warrantyProvider, icon: "building.2")
-                            }
-                        }
-                    }
-
-                    if !item.notes.isEmpty {
-                        DetailSection(title: "Notes") {
-                            Text(item.notes)
-                                .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-
-                    if !receipts.isEmpty {
-                        DetailSection(title: "Receipts & Documents") {
-                            ForEach(receipts) { receipt in
+                if !receipts.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        CardHeader("Documents")
+                        VStack(spacing: 0) {
+                            ForEach(Array(receipts.enumerated()), id: \.element.persistentModelID) { index, receipt in
+                                if index > 0 { Divider().overlay(Theme.divider) }
                                 Button { selectedReceipt = receipt } label: {
                                     HStack(spacing: 12) {
-                                        Image(systemName: receipt.isPDF ? "doc.richtext.fill" : "photo.fill")
-                                            .foregroundStyle(receipt.isPDF ? .red : .blue)
-                                            .frame(width: 24)
-                                        Text(receipt.filename.isEmpty ? "Document" : receipt.filename)
-                                            .foregroundStyle(.primary)
+                                        Image(systemName: receipt.isPDF ? "doc.text" : "photo")
+                                            .foregroundStyle(Theme.secondaryText)
+                                            .frame(width: 20)
+                                        Text(receipt.displayName)
+                                            .foregroundStyle(Theme.ink)
                                             .lineLimit(1)
                                             .truncationMode(.middle)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                        Spacer(minLength: 8)
                                         Image(systemName: "chevron.right")
-                                            .font(.caption)
-                                            .foregroundStyle(.tertiary)
+                                            .font(.footnote.weight(.semibold))
+                                            .foregroundStyle(Theme.tertiaryText)
                                     }
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-
-                    if !reminders.isEmpty {
-                        DetailSection(title: "Maintenance") {
-                            ForEach(reminders) { reminder in
-                                HStack(spacing: 10) {
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(reminder.title)
-                                            .foregroundStyle(.primary)
-                                        Text("Due \(reminder.nextDueDate.formatted(.dateTime.month(.abbreviated).day().year())) · \(reminder.intervalLabel)")
-                                            .font(.caption)
-                                            .foregroundStyle(reminder.isDue ? .red : .secondary)
-                                    }
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 12)
                                     .contentShape(Rectangle())
-                                    .onTapGesture { selectedReminder = reminder }
-
-                                    if reminder.isDue {
-                                        Image(systemName: "exclamationmark.circle.fill")
-                                            .foregroundStyle(.orange)
-                                    }
-                                    Button { markReminderDone(reminder) } label: {
-                                        Image(systemName: "checkmark.circle")
-                                            .foregroundStyle(.green)
-                                    }
-                                    .buttonStyle(.plain)
-                                    Button { deleteReminder(reminder) } label: {
-                                        Image(systemName: "trash")
-                                            .foregroundStyle(.red)
-                                    }
-                                    .buttonStyle(.plain)
                                 }
+                                .buttonStyle(.pressable)
                             }
                         }
+                        .card(padding: 0)
                     }
+                }
 
-                    if let added = item.dateAdded {
-                        Text("Added \(added.formatted(date: .long, time: .omitted))")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.bottom, 8)
+                if !item.notes.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        CardHeader("Notes")
+                        Text(item.notes)
+                            .foregroundStyle(Theme.ink)
+                            .textSelection(.enabled)
+                            .card(padding: 14)
                     }
                 }
-                .padding()
-            }
-        }
-        .navigationTitle(item.name.isEmpty ? "Item" : item.name)
-        .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button(action: { showingEditItem = true }) {
-                    Image(systemName: "pencil")
+
+                maintenanceSection
+
+                if let added = item.dateAdded {
+                    Text("Added \(added.formatted(date: .long, time: .omitted))")
+                        .font(.caption)
+                        .foregroundStyle(Theme.tertiaryText)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 4)
                 }
             }
-            ToolbarItem(placement: .navigationBarTrailing) {
+            .padding(.horizontal, 16)
+            .padding(.bottom, 24)
+        }
+        .themedScreen()
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Edit") { showingEditItem = true }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button(action: duplicateItem) {
+                    Button {
+                        ItemActions.duplicate(item, in: modelContext)
+                    } label: {
                         Label("Duplicate", systemImage: "plus.square.on.square")
                     }
                     Button(action: shareItemAsPDF) {
                         Label("Share as PDF", systemImage: "square.and.arrow.up")
                     }
                     Button(action: { showingAddReminder = true }) {
-                        Label("Add Reminder", systemImage: "bell.badge")
+                        Label("Add Maintenance Reminder", systemImage: "bell")
                     }
                     Divider()
                     Button(role: .destructive, action: { showingDeleteConfirmation = true }) {
                         Label("Delete", systemImage: "trash")
                     }
                 } label: {
-                    Image(systemName: "ellipsis.circle")
+                    Image(systemName: "ellipsis")
                 }
+                .accessibilityLabel("More")
             }
         }
         .sheet(isPresented: $showingEditItem) {
@@ -275,130 +263,123 @@ struct ItemDetailView: View {
         .sheet(item: $shareFile) { file in
             ShareSheet(url: file.url)
         }
-        .confirmationDialog("Delete \"\(item.name)\"?", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
+        .fullScreenCover(item: $photoViewerStart) { start in
+            PhotoViewerView(images: images, selection: start.index)
+        }
+        .messageAlert("Couldn't Create PDF", message: $exportError)
+        .confirmationDialog("Delete \"\(item.displayName)\"?", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
             Button("Delete Item", role: .destructive) {
-                modelContext.delete(item)
                 dismiss()
+                modelContext.delete(item)
             }
         } message: {
-            Text("This action cannot be undone.")
+            Text("Its photos, documents and reminders will also be deleted. This can't be undone.")
         }
     }
 
-    private func markReminderDone(_ reminder: Reminder) {
-        NotificationManager.shared.cancel(reminder.notificationID)
-        reminder.advance()
-        NotificationManager.shared.schedule(reminder, itemName: item.name)
+    private var valueCaption: String {
+        var parts: [String] = [item.currentValue != nil ? "current value" : "purchase price"]
+        if item.currentValue != nil, let paid = item.purchasePrice {
+            parts.append("paid \((paid * Double(item.quantity)).currencyString)")
+        }
+        return parts.joined(separator: " · ")
     }
 
-    private func deleteReminder(_ reminder: Reminder) {
-        NotificationManager.shared.cancel(reminder.notificationID)
-        modelContext.delete(reminder)
+    @ViewBuilder
+    private func photoHeader(_ images: [UIImage]) -> some View {
+        if !images.isEmpty {
+            TabView(selection: $selectedPhotoIndex) {
+                ForEach(images.indices, id: \.self) { index in
+                    Image(uiImage: images[index])
+                        .resizable()
+                        .scaledToFill()
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 240)
+                        .clipped()
+                        .contentShape(Rectangle())
+                        .onTapGesture { photoViewerStart = PhotoViewerStart(index: index) }
+                        .tag(index)
+                        .accessibilityLabel("Photo \(index + 1) of \(images.count)")
+                        .accessibilityAddTraits(.isButton)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: images.count > 1 ? .always : .never))
+            .frame(height: 240)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.photoRadius, style: .continuous))
+            .padding(.top, 4)
+        } else {
+            Button { showingEditItem = true } label: {
+                VStack(spacing: 8) {
+                    Image(systemName: "camera")
+                        .font(.system(size: 26))
+                    Text("Add photos")
+                        .font(.subheadline)
+                }
+                .foregroundStyle(Theme.secondaryText)
+                .frame(maxWidth: .infinity)
+                .frame(height: 150)
+                .background(Theme.surfaceMuted, in: RoundedRectangle(cornerRadius: Theme.photoRadius, style: .continuous))
+            }
+            .buttonStyle(.pressable)
+            .padding(.top, 4)
+        }
+    }
+
+    @ViewBuilder
+    private var maintenanceSection: some View {
+        if !reminders.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                CardHeader(title: "Maintenance") {
+                    Button("Add") { showingAddReminder = true }
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.ink)
+                }
+                VStack(spacing: 0) {
+                    ForEach(Array(reminders.enumerated()), id: \.element.persistentModelID) { index, reminder in
+                        if index > 0 { Divider().overlay(Theme.divider) }
+                        HStack(spacing: 10) {
+                            Button { selectedReminder = reminder } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(reminder.title)
+                                        .foregroundStyle(reminder.isActive ? Theme.ink : Theme.secondaryText)
+                                    Text(reminder.statusLine)
+                                        .font(.footnote)
+                                        .foregroundStyle(reminder.isActive && reminder.isDue ? Theme.warning : Theme.secondaryText)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+
+                            if reminder.isActive {
+                                Button { reminder.markDone() } label: {
+                                    Image(systemName: "checkmark.circle")
+                                        .font(.title3)
+                                        .foregroundStyle(Theme.ink)
+                                        .frame(width: 44, height: 44)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.pressable)
+                                .accessibilityLabel("Mark \(reminder.title) done")
+                                .sensoryFeedback(.success, trigger: reminder.lastCompletedDate)
+                            }
+                        }
+                        .padding(.leading, 14)
+                        .padding(.trailing, 4)
+                        .padding(.vertical, 4)
+                    }
+                }
+                .card(padding: 0)
+            }
+        }
     }
 
     private func shareItemAsPDF() {
         let data = ExportManager.itemPDFData(from: item)
-        let filename = "\(item.name.isEmpty ? "Item" : item.name)-Report.pdf"
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
-        try? data.write(to: url)
+        guard let url = TempFile.write(data, preferredName: "\(item.displayName) Report", ext: "pdf") else {
+            exportError = "The report couldn't be saved. Please try again."
+            return
+        }
         shareFile = ShareableFile(url: url)
     }
-
-    private func duplicateItem() {
-        let copy = Item(
-            name: item.name.isEmpty ? "(Copy)" : "\(item.name) (Copy)",
-            itemDescription: item.itemDescription,
-            quantity: item.quantity,
-            category: item.category ?? .other,
-            room: item.room,
-            make: item.make,
-            model: item.model,
-            serialNumber: "",
-            condition: item.condition,
-            purchasePrice: item.purchasePrice,
-            purchaseDate: item.purchaseDate,
-            purchaseStore: item.purchaseStore,
-            currentValue: item.currentValue,
-            warrantyExpiration: item.warrantyExpiration,
-            warrantyProvider: item.warrantyProvider,
-            notes: item.notes
-        )
-        modelContext.insert(copy)
-        for photo in item.photos ?? [] {
-            guard let data = photo.imageData else { continue }
-            let photoCopy = Photo(imageData: data)
-            photoCopy.item = copy
-            modelContext.insert(photoCopy)
-        }
-        for receipt in item.receipts ?? [] {
-            guard let data = receipt.fileData else { continue }
-            let receiptCopy = Receipt(fileData: data, filename: receipt.filename)
-            receiptCopy.item = copy
-            modelContext.insert(receiptCopy)
-        }
-        for reminder in item.reminders ?? [] {
-            let reminderCopy = Reminder(
-                title: reminder.title,
-                notes: reminder.notes,
-                intervalDays: reminder.intervalDays,
-                nextDueDate: reminder.nextDueDate
-            )
-            reminderCopy.item = copy
-            modelContext.insert(reminderCopy)
-            if reminder.nextDueDate > Date() {
-                NotificationManager.shared.schedule(reminderCopy, itemName: copy.name)
-            }
-        }
-    }
-}
-
-// MARK: - Supporting Views
-
-struct DetailSection<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.headline)
-            VStack(alignment: .leading, spacing: 10) { content }
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(.secondarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-        }
-    }
-}
-
-struct DetailRow: View {
-    let label: String
-    let value: String
-    let icon: String
-    var valueColor: Color = .primary
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon).foregroundStyle(.secondary).frame(width: 20)
-            Text(label).foregroundStyle(.secondary).frame(width: 80, alignment: .leading)
-            Text(value).foregroundStyle(valueColor).frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .font(.subheadline)
-    }
-}
-
-private struct BadgeStyle: ViewModifier {
-    let color: Color
-    func body(content: Content) -> some View {
-        content
-            .font(.caption)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(color.opacity(0.12))
-            .foregroundStyle(color)
-            .clipShape(Capsule())
-    }
-}
-
-private extension View {
-    func badgeStyle(color: Color) -> some View { modifier(BadgeStyle(color: color)) }
 }
