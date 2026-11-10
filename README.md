@@ -81,4 +81,4 @@ The README images are generated: [`Tools/make_readme_art.py`](Tools/make_readme_
 
 ## License
 
-MIT
+[MIT](LICENSE)
