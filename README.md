@@ -16,7 +16,7 @@
   and when warranties expire, so an insurance claim takes minutes, not weekends.
 </p>
 
-<p align="center"><a href="https://azheng888.github.io/OwnedIt/"><b>Website</b></a></p>
+<p align="center"><a href="https://allanzheng.com/OwnedIt/"><b>Website</b></a></p>
 
 <br>
 
