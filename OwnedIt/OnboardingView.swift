@@ -82,7 +82,7 @@ private struct PageView: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
                 (Text(page.lead + "\n") + Text(page.accent).foregroundColor(Theme.secondaryText))
-                    .font(.system(size: 38, design: .serif))
+                    .font(.system(size: 34, weight: .bold))
                     .tracking(-0.5)
                     .foregroundStyle(Theme.ink)
                     .lineSpacing(2)

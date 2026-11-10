@@ -91,7 +91,7 @@ struct ItemDetailView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(item.displayName)
-                        .font(.system(size: 30, design: .serif))
+                        .font(.system(size: 28, weight: .bold))
                         .tracking(-0.4)
                         .foregroundStyle(Theme.ink)
                         .textSelection(.enabled)

@@ -354,7 +354,6 @@ struct AddEditItemView: View {
             TextField("Serial Number", text: $form.serialNumber)
                 .textInputAutocapitalization(.characters)
                 .autocorrectionDisabled()
-                .fontDesign(.monospaced)
         }
     }
 

@@ -238,9 +238,8 @@ enum ExportManager {
     private static let pageRect = CGRect(x: 0, y: 0, width: 612, height: 792) // US Letter
     private static let margin: CGFloat = 48
 
-    private static func serif(_ size: CGFloat, bold: Bool = true) -> UIFont {
-        let base = UIFont.systemFont(ofSize: size, weight: bold ? .semibold : .regular)
-        return UIFont(descriptor: base.fontDescriptor.withDesign(.serif) ?? base.fontDescriptor, size: size)
+    private static func font(_ size: CGFloat, bold: Bool = true) -> UIFont {
+        UIFont.systemFont(ofSize: size, weight: bold ? .semibold : .regular)
     }
 
     private static func attrs(_ font: UIFont, _ color: UIColor, align: NSTextAlignment = .left) -> [NSAttributedString.Key: Any] {
@@ -303,7 +302,7 @@ enum ExportManager {
             newPage()
 
             // Title block
-            ("Home Inventory" as NSString).draw(at: CGPoint(x: margin, y: y), withAttributes: attrs(serif(24), Ink.primary))
+            ("Home Inventory" as NSString).draw(at: CGPoint(x: margin, y: y), withAttributes: attrs(font(24), Ink.primary))
             y += 32
             let total = items.compactMap(\.displayValue).reduce(0, +)
             let units = items.reduce(0) { $0 + $1.quantity }
@@ -312,7 +311,7 @@ enum ExportManager {
             if total > 0 {
                 let totalStr = "Total value  \(total.wholeCurrencyString)" as NSString
                 totalStr.draw(in: CGRect(x: margin, y: y - 2, width: width, height: 16),
-                              withAttributes: attrs(serif(13), Ink.accent, align: .right))
+                              withAttributes: attrs(font(13), Ink.accent, align: .right))
             }
             y += 22
             rule(at: y)
@@ -332,7 +331,7 @@ enum ExportManager {
                 if y + 60 > bottom { newPage() }
                 y += 10
                 let groupTotal = group.items.compactMap(\.displayValue).reduce(0, +)
-                (group.title as NSString).draw(at: CGPoint(x: margin, y: y), withAttributes: attrs(serif(14), Ink.primary))
+                (group.title as NSString).draw(at: CGPoint(x: margin, y: y), withAttributes: attrs(font(14), Ink.primary))
                 if groupTotal > 0 {
                     (groupTotal.wholeCurrencyString as NSString).draw(in: CGRect(x: margin, y: y + 2, width: width, height: 14),
                                                                  withAttributes: attrs(.systemFont(ofSize: 10, weight: .medium), Ink.secondary, align: .right))
@@ -388,7 +387,7 @@ enum ExportManager {
             ("Item Record" as NSString).draw(at: CGPoint(x: margin, y: y), withAttributes: attrs(.systemFont(ofSize: 10, weight: .semibold), Ink.accent))
             y += 16
             let title = item.displayName as NSString
-            let titleAttrs = attrs(serif(22), Ink.primary)
+            let titleAttrs = attrs(font(22), Ink.primary)
             let titleHeight = title.boundingRect(with: CGSize(width: contentWidth, height: 80), options: .usesLineFragmentOrigin, attributes: titleAttrs, context: nil).height
             title.draw(in: CGRect(x: margin, y: y, width: contentWidth, height: ceil(titleHeight)), withAttributes: titleAttrs)
             y += ceil(titleHeight) + 4

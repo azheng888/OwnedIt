@@ -198,7 +198,7 @@ struct RoomCardView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
-                    .font(.system(size: 19, design: .serif))
+                    .font(.headline)
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1)
                 Text(totalValue > 0 ? totalValue.wholeCurrencyString : items.count.pluralized("item"))

@@ -6,9 +6,9 @@ import UIKit
 // • Warm paper background; cards are a slightly lighter surface with a 1pt border, no shadows.
 // • Ink (near-black) is the only accent: primary buttons, selection, toggles, progress.
 //   The only other colors are semantic: amber for warnings, red for critical.
-// • Type: New York serif (regular weight) for screen titles, section headers and the item
-//   name on its detail screen — nothing else. All body text and every number is SF Pro,
-//   numbers with tabular digits.
+// • Type: SF Pro only — one typeface everywhere (titles, headers, body, fields, numbers).
+//   Hierarchy comes from size and weight, never from a different design (no serif, no mono).
+//   Numbers use tabular digits.
 // • One art style: neutral rounded-square tiles with a secondary-gray glyph, or the item's photo.
 // • Motion: short critically damped springs, press-scale 0.97, respects Reduce Motion.
 
@@ -40,15 +40,12 @@ enum Theme {
 
     /// Applies global UIKit appearance (navigation bar titles) once at launch.
     static func applyAppearance() {
-        func serif(_ style: UIFont.TextStyle, size: CGFloat? = nil) -> UIFont {
-            let base = UIFont.preferredFont(forTextStyle: style)
-            let regular = UIFont.systemFont(ofSize: size ?? base.pointSize, weight: .regular)
-            let descriptor = regular.fontDescriptor.withDesign(.serif) ?? regular.fontDescriptor
-            return UIFontMetrics(forTextStyle: style).scaledFont(for: UIFont(descriptor: descriptor, size: size ?? base.pointSize))
+        func titleFont(_ style: UIFont.TextStyle, size: CGFloat, weight: UIFont.Weight) -> UIFont {
+            UIFontMetrics(forTextStyle: style).scaledFont(for: .systemFont(ofSize: size, weight: weight))
         }
         let ink = UIColor(Theme.ink)
-        let largeTitle: [NSAttributedString.Key: Any] = [.font: serif(.largeTitle, size: 36), .foregroundColor: ink, .kern: -0.6]
-        let inlineTitle: [NSAttributedString.Key: Any] = [.font: serif(.headline, size: 19), .foregroundColor: ink]
+        let largeTitle: [NSAttributedString.Key: Any] = [.font: titleFont(.largeTitle, size: 34, weight: .bold), .foregroundColor: ink]
+        let inlineTitle: [NSAttributedString.Key: Any] = [.font: titleFont(.headline, size: 17, weight: .semibold), .foregroundColor: ink]
 
         let standard = UINavigationBarAppearance()
         standard.configureWithDefaultBackground()
@@ -70,11 +67,6 @@ enum Theme {
 // MARK: - Typography
 
 extension Font {
-    /// Serif — titles and section headers only.
-    static func heading(_ style: Font.TextStyle = .title2) -> Font {
-        .system(style, design: .serif)
-    }
-
     /// Large figures (totals). SF Pro, tabular digits.
     static func hero(_ size: CGFloat = 40) -> Font {
         .system(size: size, weight: .semibold).monospacedDigit()
@@ -82,10 +74,10 @@ extension Font {
 }
 
 extension View {
-    /// Section header above a card: serif, regular, ink.
+    /// Section header above a card: SF Pro semibold, ink.
     func sectionHeader() -> some View {
         self
-            .font(.system(size: 18, design: .serif))
+            .font(.headline)
             .foregroundStyle(Theme.ink)
             .accessibilityAddTraits(.isHeader)
     }
@@ -228,7 +220,7 @@ struct IconTile: View {
     }
 }
 
-/// Section header row: serif title + optional trailing accessory (e.g. a total).
+/// Section header row: title + optional trailing accessory (e.g. a total).
 struct CardHeader<Trailing: View>: View {
     let title: String
     @ViewBuilder var trailing: Trailing
