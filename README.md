@@ -16,6 +16,8 @@
   and when warranties expire, so an insurance claim takes minutes, not weekends.
 </p>
 
+<p align="center"><a href="https://azheng888.github.io/OwnedIt/"><b>Website</b></a></p>
+
 <br>
 
 <p align="center">
@@ -77,7 +79,7 @@ Debug builds accept a few launch arguments:
 | `-initialTab items\|rooms\|maintenance\|summary` | Opens straight to that tab |
 | `-hasSeenOnboarding YES` | Skips onboarding |
 
-The README images are generated: [`Tools/make_readme_art.py`](Tools/make_readme_art.py) frames simulator screenshots and draws the banner, and [`Tools/make_app_icon.py`](Tools/make_app_icon.py) draws the app icon.
+The website lives in [`docs/index.html`](docs/index.html) and is served by GitHub Pages. The README images are generated: [`Tools/make_readme_art.py`](Tools/make_readme_art.py) frames simulator screenshots and draws the banner, and [`Tools/make_app_icon.py`](Tools/make_app_icon.py) draws the app icon.
 
 ## License
 

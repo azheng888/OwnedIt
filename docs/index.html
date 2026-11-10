@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>OwnedIt: everything you own, accounted for</title>
+<meta name="description" content="A calm, private home inventory app for iPhone: photos, receipts, warranties and value, synced with iCloud.">
+<meta property="og:title" content="OwnedIt">
+<meta property="og:description" content="A calm, private home inventory app for iPhone: photos, receipts, warranties and value, synced with iCloud.">
+<meta property="og:image" content="https://azheng888.github.io/OwnedIt/images/hero-light.png">
+<meta name="theme-color" content="#FCFBF8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#151412" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/png" href="img/icon.png">
+<link rel="apple-touch-icon" href="img/icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap">
+<style>
+/* Layout modeled section by section on the hims & hers site:
+   floating nav pill → glowing hero card with phone rising → giant words behind a centered phone →
+   paragraph that fills in as you scroll → three 3D tiles under faded words → big icon tile + giant word →
+   ring stat → row of tall cards with a phone in the middle → closing card.
+   OwnedIt brand: warm paper, ink as the only accent, amber only as a warm glow/warning, Manrope only. */
+:root {
+  --paper: #F7F5F0; --card: #FCFBF8; --well: #F1EEE7; --muted: #ECE8DE; --hair: #E4DFD4;
+  --ink: #1F1D19; --sub: #77715F; --faint: #A39D8C; --ghost: #E9E5DC; --on-ink: #FCFBF8; --amber: #A3520F; --shadow: 31 26 18;
+  --g1: #EFE6D6; --g2: #F8F3EA; --g3: #E2D3BD; --tile: #F3EFE7;
+  --sans: "Manrope", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #151412; --card: #1C1B18; --well: #201F1C; --muted: #2A2824; --hair: #2F2D29;
+    --ink: #F2EFE8; --sub: #A39D8C; --faint: #6E6A5F; --ghost: #262420; --on-ink: #151412; --amber: #E0A04A; --shadow: 0 0 0;
+    --g1: #1E1B17; --g2: #171513; --g3: #2E261C; --tile: #23211D; color-scheme: dark;
+  }
+  :root:not([data-theme="light"]) .light-only { display: none; }
+  :root:not([data-theme="light"]) .dark-only { display: block; }
+}
+:root[data-theme="dark"] {
+  --paper: #151412; --card: #1C1B18; --well: #201F1C; --muted: #2A2824; --hair: #2F2D29;
+  --ink: #F2EFE8; --sub: #A39D8C; --faint: #6E6A5F; --ghost: #262420; --on-ink: #151412; --amber: #E0A04A; --shadow: 0 0 0;
+  --g1: #1E1B17; --g2: #171513; --g3: #2E261C; --tile: #23211D; color-scheme: dark;
+}
+:root[data-theme="dark"] .light-only { display: none; }
+:root[data-theme="dark"] .dark-only { display: block; }
+.dark-only { display: none; }
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--card); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.5; -webkit-font-smoothing: antialiased; overflow-x: clip; }
+h1, h2, h3, p { margin: 0; text-wrap: balance; }
+img { max-width: 100%; display: block; }
+a { color: inherit; text-decoration: none; }
+.gut { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* Nav — wordmark left, floating white pill right (hims & hers "Limited access") */
+.nav { position: fixed; inset: 0 0 auto; z-index: 10; display: flex; justify-content: space-between; align-items: center; padding-top: 20px; padding-bottom: 20px; pointer-events: none; }
+.nav > * { pointer-events: auto; }
+.nav .gut-x { padding: 0 max(28px, env(safe-area-inset-left, 0px)); }
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 800; font-size: 19px; letter-spacing: -0.03em; }
+.brand img { width: 28px; height: 28px; border-radius: 7px; box-shadow: 0 0 0 1px var(--hair); }
+.pills { display: flex; gap: 8px; }
+.pill { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px; border-radius: 999px; background: var(--card); box-shadow: 0 0 0 1px var(--hair), 0 8px 24px rgb(var(--shadow) / 0.10); font-size: 13.5px; font-weight: 600; white-space: nowrap; }
+.pill svg { width: 15px; height: 15px; flex: none; }
+.pill.dark { background: var(--ink); color: var(--on-ink); box-shadow: 0 8px 24px rgb(var(--shadow) / 0.18); }
+
+/* 1 · Hero — glowing rounded card, phone rising out of the bottom */
+.hero { padding-top: 92px; padding-bottom: 0; }
+.glow-card { position: relative; overflow: hidden; border-radius: 32px; height: min(860px, calc(100svh - 112px)); min-height: 600px; display: grid; justify-items: center; align-content: start; text-align: center; padding-top: clamp(56px, 9vh, 104px);
+  background:
+    radial-gradient(48% 46% at 50% 82%, color-mix(in srgb, var(--amber) 26%, transparent), transparent 72%),
+    radial-gradient(34% 40% at 16% 26%, color-mix(in srgb, var(--faint) 20%, transparent), transparent 70%),
+    radial-gradient(30% 36% at 86% 40%, color-mix(in srgb, var(--g3) 80%, transparent), transparent 70%),
+    var(--paper);
+  box-shadow: 0 0 0 1px var(--hair), 0 30px 80px rgb(var(--shadow) / 0.08); }
+.glow-card h1 { padding: 0 12px; font-size: clamp(36px, 6.4vw, 84px); line-height: 1.02; font-weight: 700; letter-spacing: -0.045em; }
+.glow-card h1 span { display: block; color: var(--sub); }
+.glow-card .lede { margin-top: 18px; color: var(--sub); font-size: clamp(15px, 1.4vw, 18px); max-width: 44ch; padding: 0 16px; }
+.rise { position: absolute; left: 50%; bottom: 0; width: clamp(240px, 26vw, 340px); transform: translate(-50%, 46%) rotate(-3deg); filter: drop-shadow(0 40px 60px rgb(var(--shadow) / 0.22)); }
+
+/* 2 · Giant words behind a centered phone (sticky scroll) */
+.words { height: 260vh; position: relative; margin-top: 24px; }
+.words-stick { position: sticky; top: 0; height: 100svh; overflow: hidden; display: grid; place-items: center;
+  background: radial-gradient(60% 70% at 18% 80%, var(--g3), transparent 70%), radial-gradient(50% 60% at 90% 10%, var(--g1), transparent 70%), linear-gradient(160deg, var(--g1), var(--g2) 55%, var(--g3)); }
+.giant { position: absolute; font-size: clamp(110px, 22vw, 340px); font-weight: 800; letter-spacing: -0.06em; line-height: 0.8; white-space: nowrap; color: color-mix(in srgb, var(--ink) 16%, transparent); will-change: transform; }
+.giant.a { top: 8%; left: 0; }
+.giant.b { top: 38%; left: 0; color: color-mix(in srgb, var(--amber) 34%, transparent); }
+.giant.c { bottom: 4%; left: 0; }
+.stick-phone { position: relative; z-index: 1; width: clamp(230px, 24vw, 320px); filter: drop-shadow(0 40px 70px rgb(var(--shadow) / 0.25)); }
+
+/* 3 · Paragraph that fills in word by word */
+.para { padding-top: clamp(96px, 16vh, 180px); padding-bottom: clamp(64px, 10vh, 120px); }
+.para p { max-width: 1040px; margin: 0 auto; font-size: clamp(28px, 4vw, 54px); line-height: 1.16; letter-spacing: -0.035em; font-weight: 600; text-wrap: pretty; }
+.para p .w { color: color-mix(in srgb, var(--ink) var(--fill, 18%), var(--card)); transition: color .25s linear; }
+.para .after { max-width: 1040px; margin: clamp(64px, 12vh, 140px) auto 0; font-size: clamp(28px, 4vw, 54px); letter-spacing: -0.035em; font-weight: 600; line-height: 1.16; }
+
+/* 4 · Three 3D tiles under faded words */
+.tiles { padding-top: 40px; padding-bottom: clamp(80px, 12vh, 140px); overflow: hidden; }
+.tile-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(16px, 6vw, 110px); max-width: 1320px; margin: 0 auto; }
+.tile-col { display: grid; justify-items: center; }
+.tile-col h3 { font-size: clamp(40px, 7vw, 104px); font-weight: 600; letter-spacing: -0.05em; line-height: 1; color: var(--ghost); white-space: nowrap; }
+.slab { width: 100%; max-width: 380px; aspect-ratio: 1.55; margin-top: clamp(-30px, -2vw, -10px); perspective: 900px; }
+.slab div { width: 100%; height: 100%; border-radius: 22%/34%; display: grid; place-items: center; transform: rotateX(48deg); transform-origin: 50% 60%;
+  background: linear-gradient(180deg, var(--tile), color-mix(in srgb, var(--tile) 70%, var(--muted)));
+  box-shadow: 0 6px 0 color-mix(in srgb, var(--card) 70%, var(--hair)), 0 7px 0 var(--hair), 0 60px 50px -20px rgb(var(--shadow) / 0.20); }
+.slab svg { width: 30%; height: 44%; color: var(--ink); transform: rotateX(-18deg); }
+.tiles h2 { text-align: center; margin-top: clamp(56px, 9vh, 110px); font-size: clamp(36px, 5.6vw, 76px); line-height: 1.04; font-weight: 700; letter-spacing: -0.045em; }
+.tiles p.sub { text-align: center; margin: 18px auto 0; color: var(--sub); max-width: 50ch; font-size: 17px; }
+
+/* 5 · Big icon tile + giant word ("Programs") */
+.feature { padding-top: clamp(80px, 12vh, 140px); padding-bottom: 40px; display: grid; justify-items: center; text-align: center; }
+.icon-tile { width: clamp(120px, 14vw, 180px); aspect-ratio: 1; border-radius: 26%; background: var(--card); display: grid; place-items: center; box-shadow: 0 0 0 1px var(--hair), 0 30px 60px rgb(var(--shadow) / 0.12); }
+.icon-tile svg { width: 40%; height: 40%; color: var(--ink); }
+.feature h2 { margin-top: clamp(36px, 6vh, 64px); font-size: clamp(56px, 11vw, 160px); line-height: 0.95; font-weight: 700; letter-spacing: -0.055em; }
+.feature p.sub { margin-top: 20px; color: var(--sub); max-width: 48ch; font-size: 18px; }
+.feature-shot { display: grid; grid-template-columns: 1fr auto 1fr; gap: clamp(16px, 4vw, 56px); align-items: center; max-width: 1100px; margin: clamp(48px, 8vh, 88px) auto 0; text-align: left; }
+.feature-shot img { width: clamp(220px, 24vw, 300px); filter: drop-shadow(0 30px 50px rgb(var(--shadow) / 0.18)); }
+.notes { display: grid; gap: 14px; }
+.note { padding: 18px 20px; border-radius: 20px; background: var(--paper); box-shadow: 0 0 0 1px var(--hair); }
+.note small { display: block; font-size: 12px; font-weight: 600; letter-spacing: 0.02em; color: var(--faint); text-transform: uppercase; }
+.note b { display: block; margin-top: 4px; font-size: 18px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.25; }
+.note span { display: block; margin-top: 2px; color: var(--sub); font-size: 14px; }
+.note.warn small { color: var(--amber); }
+
+/* 6 · Ring stat */
+.stat { padding-top: clamp(100px, 16vh, 180px); display: grid; justify-items: center; text-align: center; }
+.ring { width: clamp(160px, 16vw, 200px); height: auto; }
+.ring circle { fill: none; stroke-width: 7; }
+.ring .bg { stroke: var(--muted); }
+.ring .fg { stroke: var(--ink); stroke-linecap: round; stroke-dasharray: 333; stroke-dashoffset: 333; transform: rotate(-90deg); transform-origin: 50% 50%; transition: stroke-dashoffset 1.6s cubic-bezier(.2,.7,.2,1); }
+.ring.on .fg { stroke-dashoffset: 77; }
+.ring text { fill: var(--ink); font-family: var(--sans); font-weight: 600; letter-spacing: -0.04em; }
+.stat p { margin-top: 28px; font-size: clamp(26px, 3vw, 38px); line-height: 1.2; letter-spacing: -0.03em; font-weight: 600; max-width: 20ch; color: color-mix(in srgb, var(--ink) 86%, transparent); }
+.stat p span { display: block; color: var(--amber); }
+.stat small { margin-top: 14px; color: var(--faint); font-size: 13px; }
+
+/* 7 · Row of tall cards with the phone in the middle */
+.cards { position: relative; margin-top: clamp(56px, 9vh, 100px); padding-bottom: clamp(80px, 12vh, 140px); }
+.card-row { display: grid; grid-template-columns: repeat(5, minmax(200px, 1fr)); gap: 24px; max-width: 1400px; margin: 0 auto; }
+.tall { border-radius: 32px; aspect-ratio: 0.48; overflow: hidden; position: relative; display: grid; align-content: center; justify-items: center; text-align: center; padding: 28px 22px; }
+.tall hr { position: absolute; left: 22px; right: 22px; border: 0; border-top: 1px solid currentColor; opacity: 0.35; margin: 0; }
+.tall hr.t { top: 18%; } .tall hr.b { bottom: 18%; }
+.tall small { font-size: 13px; font-weight: 600; opacity: 0.7; }
+.tall b { display: block; margin-top: 10px; font-size: clamp(22px, 2.1vw, 30px); line-height: 1.12; font-weight: 700; letter-spacing: -0.03em; }
+.tall span { display: block; margin-top: 10px; font-size: 14px; opacity: 0.7; }
+.tall.ink { background: var(--ink); color: var(--on-ink); }
+.tall.sand { background: linear-gradient(170deg, var(--g1), var(--g3)); }
+.tall.amber { background: radial-gradient(80% 60% at 50% 100%, color-mix(in srgb, var(--amber) 30%, transparent), transparent), var(--paper); box-shadow: inset 0 0 0 1px var(--hair); }
+.tall.amber small { color: var(--amber); opacity: 1; }
+.tall.shot { padding: 0; align-content: start; background: var(--paper); box-shadow: inset 0 0 0 1px var(--hair); }
+.tall.shot img { width: 86%; margin: 12% auto 0; }
+.tall.hole { visibility: hidden; }
+.card-phone { position: absolute; left: 50%; top: -4%; width: clamp(240px, 22vw, 320px); transform: translateX(-50%); filter: drop-shadow(0 40px 60px rgb(var(--shadow) / 0.25)); }
+
+/* 8 · Closing card */
+.end { padding-bottom: 28px; }
+.end .glow-card { height: auto; min-height: 0; padding: clamp(80px, 14vh, 140px) 16px; align-content: center;
+  background: radial-gradient(50% 70% at 50% 100%, color-mix(in srgb, var(--amber) 22%, transparent), transparent 72%), radial-gradient(40% 50% at 10% 10%, color-mix(in srgb, var(--faint) 16%, transparent), transparent 70%), var(--paper); }
+.end .glow-card img.icon { width: 88px; height: 88px; border-radius: 22px; box-shadow: 0 0 0 1px var(--hair), 0 20px 40px rgb(var(--shadow) / 0.16); margin-bottom: 28px; }
+.end .glow-card h2 { font-size: clamp(38px, 5.6vw, 72px); line-height: 1.04; font-weight: 700; letter-spacing: -0.045em; }
+.end .glow-card h2 span { display: block; color: var(--sub); }
+.end .btns { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 32px; }
+.foot { display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; color: var(--faint); font-size: 13px; padding-top: 28px; padding-bottom: 36px; }
+.foot nav { display: flex; gap: 20px; }
+.foot a:hover { color: var(--ink); }
+
+@media (max-width: 900px) {
+  .card-row { grid-template-columns: repeat(5, 220px); overflow-x: auto; scroll-snap-type: x mandatory; padding: 0 16px 8px; margin: 0 -16px; scrollbar-width: none; }
+  .tall { scroll-snap-align: center; }
+  .tall.hole { display: none; }
+  .card-phone { display: none; }
+  .tall.mobile-phone { display: grid !important; }
+  .feature-shot { grid-template-columns: 1fr; justify-items: center; }
+  .feature-shot img { order: -1; }
+  .notes { width: 100%; max-width: 420px; }
+}
+.tall.mobile-phone { display: none; }
+@media (max-width: 640px) {
+  .pill.hide-sm { display: none; }
+  .nav .gut-x { padding: 0 16px; }
+  .glow-card { border-radius: 24px; min-height: 560px; }
+  .tile-row { grid-template-columns: 1fr; gap: 8px; }
+  .slab { max-width: 260px; }
+  .words { height: 200vh; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .ring .fg { transition: none; }
+  .para p .w { --fill: 100% !important; }
+}
+</style>
+</head>
+<body>
+<header class="nav">
+  <a class="brand gut-x" href="#top"><img class="light-only" src="img/icon.png" alt=""><img class="dark-only" src="img/icon-dark.png" alt="">OwnedIt</a>
+  <div class="pills gut-x">
+    <a class="pill hide-sm" href="https://github.com/azheng888/OwnedIt" target="_blank" rel="noopener"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.06-.49.06-.49.8.06 1.23.83 1.23.83.72 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.65-.89-3.65-3.95 0-.87.31-1.59.83-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>GitHub</a>
+    <span class="pill"><svg viewBox="0 0 384 512" fill="currentColor" aria-hidden="true"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>Coming soon</span>
+  </div>
+</header>
+
+<main id="top">
+  <!-- 1 · Hero -->
+  <section class="hero gut">
+    <div class="glow-card">
+      <h1>Everything you own.<span>All accounted for.</span></h1>
+      <p class="lede">A calm, private home inventory for iPhone. Photos, receipts, warranties and value, synced with iCloud.</p>
+      <img class="rise light-only" src="img/light-items.png" alt="OwnedIt's Items tab, grouped by room">
+      <img class="rise dark-only" src="img/dark-items.png" alt="OwnedIt's Items tab in dark mode">
+    </div>
+  </section>
+
+  <!-- 2 · Giant words behind the phone -->
+  <section class="words" aria-label="Your whole home, in one app">
+    <div class="words-stick">
+      <div class="giant a" data-speed="-0.55" aria-hidden="true">Your whole home</div>
+      <div class="giant b" data-speed="0.45" aria-hidden="true">every room</div>
+      <div class="giant c" data-speed="-0.4" aria-hidden="true">in one app</div>
+      <img class="stick-phone light-only" src="img/light-rooms.png" alt="OwnedIt's Rooms tab with a total for each room">
+      <img class="stick-phone dark-only" src="img/dark-rooms.png" alt="OwnedIt's Rooms tab in dark mode">
+    </div>
+  </section>
+
+  <!-- 3 · Paragraph fill -->
+  <section class="para gut">
+    <p id="fill">Photos, receipts and serial numbers are just the beginning. Now get warranty alerts before they lapse, reminders for the filters and batteries you always forget, a claim readiness score that shows exactly what's missing, and a PDF report your insurer can actually use. Home inventory as it should be.</p>
+    <p class="after">All on your iPhone.</p>
+  </section>
+
+  <!-- 4 · Three tiles -->
+  <section class="tiles gut">
+    <div class="tile-row">
+      <div class="tile-col"><h3>Items</h3><div class="slab"><div><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.2 2H4a2 2 0 0 0-2 2v7.2a2 2 0 0 0 .59 1.41l8.8 8.8a2 2 0 0 0 2.82 0l7.2-7.2a2 2 0 0 0 0-2.82l-8.8-8.8A2 2 0 0 0 11.2 2ZM7.5 9A1.5 1.5 0 1 1 7.5 6a1.5 1.5 0 0 1 0 3Z"/></svg></div></div></div>
+      <div class="tile-col"><h3>Rooms</h3><div class="slab"><div><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M10.6 2.6a2 2 0 0 1 2.8 0l8 7.6c.4.38.6.9.6 1.45V20a2 2 0 0 1-2 2h-4.5a1 1 0 0 1-1-1v-5h-5v5a1 1 0 0 1-1 1H4a2 2 0 0 1-2-2v-8.35c0-.55.22-1.07.6-1.45l8-7.6Z"/></svg></div></div></div>
+      <div class="tile-col"><h3>Summary</h3><div class="slab"><div><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3" y="12" width="5" height="9" rx="1.5"/><rect x="9.5" y="7" width="5" height="14" rx="1.5"/><rect x="16" y="3" width="5" height="18" rx="1.5"/></svg></div></div></div>
+    </div>
+    <h2>Everything you need<br>when something goes wrong.</h2>
+    <p class="sub">Know what you have, where it lives and what it's worth, before the fire, the flood or the break-in.</p>
+  </section>
+
+  <!-- 5 · Big icon tile + giant word -->
+  <section class="feature gut">
+    <div class="icon-tile"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21.7 6.3a1 1 0 0 0-1.62-.3l-2.5 2.5-2.08-2.08 2.5-2.5a1 1 0 0 0-.3-1.62 6 6 0 0 0-7.92 7.42l-7.07 7.07a2.5 2.5 0 1 0 3.54 3.54l7.07-7.07a6 6 0 0 0 7.42-7.92Z"/></svg></div>
+    <h2>Upkeep</h2>
+    <p class="sub">Recurring reminders for the things that keep your stuff working, with notifications on every device, pause and resume, and a history of when you last did it.</p>
+    <div class="feature-shot">
+      <div class="notes">
+        <div class="note"><small>Every 30 days</small><b>Descale the espresso machine</b><span>Breville · Kitchen</span></div>
+        <div class="note warn"><small>Overdue</small><b>Sharpen the knives</b><span>Wüsthof · every 60 days</span></div>
+      </div>
+      <img src="img/light-maintenance.png" alt="OwnedIt's Maintenance tab with upcoming reminders">
+      <div class="notes">
+        <div class="note"><small>Every 90 days</small><b>Clean the filter</b><span>Done on one device, cleared on all</span></div>
+        <div class="note"><small>Every 180 days</small><b>Road bike tune-up</b><span>Trek · Garage</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 · Ring stat -->
+  <section class="stat gut">
+    <svg class="ring" id="ring" viewBox="0 0 120 120" role="img" aria-label="77 percent">
+      <circle class="bg" cx="60" cy="60" r="53"/><circle class="fg" cx="60" cy="60" r="53"/>
+      <text x="56" y="73" text-anchor="middle" font-size="38">77</text><text x="84" y="52" font-size="14">%</text>
+    </svg>
+    <p>of this home is ready for an insurance claim.<span>Let's fix the rest.</span></p>
+    <small>Claim readiness for the app's demo home</small>
+  </section>
+
+  <!-- 7 · Tall cards with a phone in the middle -->
+  <section class="cards gut">
+    <div class="card-row">
+      <div class="tall ink"><hr class="t"><small>Warranty</small><b>MacBook Pro 14"</b><span>Ends in 20 days</span><hr class="b"></div>
+      <div class="tall shot"><img class="light-only" src="img/light-onboarding.png" alt="OwnedIt's welcome screen"><img class="dark-only" src="img/dark-items.png" alt="OwnedIt's Items tab in dark mode"></div>
+      <div class="tall hole" aria-hidden="true"></div>
+      <div class="tall mobile-phone shot"><img class="light-only" src="img/light-summary.png" alt="OwnedIt's Summary tab"><img class="dark-only" src="img/dark-summary.png" alt="OwnedIt's Summary tab in dark mode"></div>
+      <div class="tall sand"><hr class="t"><small>Total value</small><b>$16,934</b><span>14 things in 5 rooms</span><hr class="b"></div>
+      <div class="tall amber"><hr class="t"><small>Receipt</small><b>Paper receipt<br>→ PDF</b><span>Scanned with the camera, attached to the item</span><hr class="b"></div>
+    </div>
+    <img class="card-phone light-only" src="img/light-summary.png" alt="OwnedIt's Summary tab with total value and claim readiness">
+    <img class="card-phone dark-only" src="img/dark-summary.png" alt="OwnedIt's Summary tab in dark mode">
+  </section>
+
+  <!-- 8 · Closing card -->
+  <section class="end gut">
+    <div class="glow-card">
+      <img class="icon light-only" src="img/icon.png" alt=""><img class="icon dark-only" src="img/icon-dark.png" alt="">
+      <h2>Ready when you need it.<span>Calm when you don't.</span></h2>
+      <div class="btns">
+        <a class="pill dark" href="https://github.com/azheng888/OwnedIt" target="_blank" rel="noopener">View on GitHub</a>
+        <span class="pill">Coming soon to the App Store</span>
+      </div>
+    </div>
+    <footer class="foot">
+      <span>OwnedIt · Open source under the MIT license</span>
+      <nav><a href="https://github.com/azheng888/OwnedIt" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/azheng888/OwnedIt/blob/main/LICENSE" target="_blank" rel="noopener">License</a></nav>
+    </footer>
+  </section>
+</main>
+
+<script>
+(() => {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Paragraph: wrap each word so it can fill in as it scrolls past
+  const p = document.getElementById('fill');
+  p.innerHTML = p.textContent.trim().split(/\s+/).map(w => `<span class="w">${w}</span>`).join(' ');
+  const words = [...p.querySelectorAll('.w')];
+
+  const giants = [...document.querySelectorAll('.giant')];
+  const wordsSec = document.querySelector('.words');
+
+  function frame() {
+    const vh = innerHeight;
+    // giant words slide sideways while the phone stays pinned
+    if (!reduce) {
+      const r = wordsSec.getBoundingClientRect();
+      const t = Math.min(1, Math.max(0, -r.top / Math.max(1, r.height - vh)));
+      giants.forEach(g => {
+        const s = parseFloat(g.dataset.speed);
+        const travel = g.scrollWidth - innerWidth;
+        const span = travel + innerWidth * 0.3;
+        const x = s < 0 ? innerWidth * 0.15 - t * span * -s * 1.6 : -travel - innerWidth * 0.15 + t * span * s * 1.6;
+        g.style.transform = `translateX(${x}px)`;
+      });
+    }
+    // fill: words up to the 60% line of the viewport are fully inked
+    const pr = p.getBoundingClientRect();
+    const progress = (vh * 0.75 - pr.top) / (pr.height + vh * 0.2);
+    const n = reduce ? words.length : Math.round(Math.min(1, Math.max(0, progress)) * words.length);
+    words.forEach((w, i) => w.style.setProperty('--fill', i < n ? '100%' : '18%'));
+  }
+  let raf = 0;
+  const onScroll = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; frame(); }); };
+  addEventListener('scroll', onScroll, { passive: true });
+  addEventListener('resize', onScroll);
+  frame();
+
+  // Ring draws when it comes into view
+  const ring = document.getElementById('ring');
+  if (reduce || !('IntersectionObserver' in window)) ring.classList.add('on');
+  else new IntersectionObserver((es, o) => es.forEach(e => { if (e.isIntersecting) { ring.classList.add('on'); o.disconnect(); } }), { threshold: 0.6 }).observe(ring);
+})();
+</script>
+</body>
+</html>
