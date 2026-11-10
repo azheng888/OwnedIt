@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# Xcode user-specific files
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+
+# Exported builds
+*.ipa
+*.dSYM.zip
+*.dSYM
